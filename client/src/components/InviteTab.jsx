@@ -38,23 +38,30 @@ export default function InviteTab() {
     e.preventDefault();
     if (!windowStart || !windowEnd || selected.length === 0) return;
     setStatus('creating');
+
+    const locationValue = locationType === 'in-person'
+      ? (inPersonLocation || 'In person')
+      : (onlinePlatform || 'Online');
+
     fetch('/api/events/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
       body: JSON.stringify({
         summary: summary || 'Meeting',
+        description,
+        durationMinutes: parseInt(durationMinutes, 10) || 60,
+        urgency,
+        location: locationValue,
         start: windowStart,
         end: windowEnd,
-        durationMinutes: parseInt(durationMinutes, 10) || 60,
-        locationType: locationType === 'in-person' ? 'in-person' : 'virtual',
         attendees: selected.map(c => c.email),
-        urgency,
+        locationType: locationType === 'in-person' ? 'in-person' : 'virtual',
       }),
     })
-      .then(res => res.json())
-      .then(data => {
-        if (data.id) {
+      .then(async res => ({ ok: res.ok, status: res.status, data: await res.json() }))
+      .then(result => {
+        if (result.ok) {
           setStatus('success');
           setSelected([]);
           setSummary('');
@@ -69,6 +76,9 @@ export default function InviteTab() {
           setResults([]);
           setQuery('');
         } else {
+          if (result.status === 409 && result.data?.error === 'no_valid_slots') {
+            alert('No available time slots were found for that window.');
+          }
           setStatus('error');
         }
       })
