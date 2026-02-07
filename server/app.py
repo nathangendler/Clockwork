@@ -2,6 +2,7 @@ from datetime import datetime, timezone, timedelta
 import os
 from dotenv import load_dotenv
 import json
+from zoneinfo import ZoneInfo
 
 load_dotenv()
 
@@ -57,6 +58,26 @@ def _build_participant_payload(user, timezone_name, events=None):
         "timezone": timezone_name,
         "events": events or [],
     }
+
+
+def _format_log_time(value):
+    if value is None:
+        return "None"
+    if isinstance(value, datetime):
+        dt = value
+    elif isinstance(value, str):
+        try:
+            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return value
+    else:
+        return str(value)
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    local_dt = dt.astimezone(ZoneInfo("America/New_York"))
+    formatted = local_dt.strftime("%Y-%m-%d %I:%M %p %Z")
+    return formatted.lstrip("0").replace(" 0", " ")
 
 
 def _normalize_google_event(event, fallback_timezone):
@@ -151,7 +172,13 @@ def _schedule_meeting(
         from scheduler import create_meeting_from_payload
 
         org_settings_path = os.path.join(os.path.dirname(__file__), "org_settings.json")
-        print(f"[scheduler] window_start={window_start}, window_end={window_end}, duration={duration_minutes}min, location={location_type}")
+        print(
+            "[scheduler] window_start="
+            f"{_format_log_time(window_start)}, "
+            "window_end="
+            f"{_format_log_time(window_end)}, "
+            f"duration={duration_minutes}min, location={location_type}"
+        )
         print(f"[scheduler] participants: {len(participants_payload)}")
         result = create_meeting_from_payload(
             people_payload=participants_payload,
@@ -164,7 +191,13 @@ def _schedule_meeting(
         )
         if result:
             start_time, end_time, scored = result
-            print(f"[scheduler] SUCCESS: start={start_time}, end={end_time}, score={scored[0].score if scored else 'N/A'}")
+            print(
+                "[scheduler] SUCCESS: start="
+                f"{_format_log_time(start_time)}, "
+                "end="
+                f"{_format_log_time(end_time)}, "
+                f"score={scored[0].score if scored else 'N/A'}"
+            )
             return start_time, end_time
         else:
             print("[scheduler] returned None — no valid slots found")
@@ -356,7 +389,11 @@ def api_events_create():
             )
             print(f"[events] organizer {organizer.email}: {len(organizer_events)} events")
             for ev in organizer_events:
-                print(f"  - {ev.get('title','(no title)')} {ev.get('start')} → {ev.get('end')}")
+                print(
+                    "  - "
+                    f"{ev.get('title','(no title)')} "
+                    f"{_format_log_time(ev.get('start'))} → {_format_log_time(ev.get('end'))}"
+                )
             participants_payload.append(
                 _build_participant_payload(organizer, DEFAULT_TIMEZONE, organizer_events)
             )
@@ -372,7 +409,11 @@ def api_events_create():
                 )
                 print(f"[events] attendee {user.email} (user_id={user.id}): {len(user_events)} events")
                 for ev in user_events:
-                    print(f"  - {ev.get('title','(no title)')} {ev.get('start')} → {ev.get('end')}")
+                    print(
+                        "  - "
+                        f"{ev.get('title','(no title)')} "
+                        f"{_format_log_time(ev.get('start'))} → {_format_log_time(ev.get('end'))}"
+                    )
                 participants_payload.append(
                     _build_participant_payload(user, DEFAULT_TIMEZONE, user_events)
                 )
@@ -383,7 +424,10 @@ def api_events_create():
                 )
                 print(f"[events] attendee {email}: not in DB, FreeBusy returned {len(freebusy_events)} busy blocks")
                 for ev in freebusy_events:
-                    print(f"  - Busy {ev.get('start')} → {ev.get('end')}")
+                    print(
+                        "  - Busy "
+                        f"{_format_log_time(ev.get('start'))} → {_format_log_time(ev.get('end'))}"
+                    )
                 participants_payload.append({
                     "id": email,
                     "name": "",

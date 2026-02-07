@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 Interval = Tuple[int, int]  # [start, end) in minutes from reference start
 
@@ -354,11 +355,11 @@ def find_optimal_slots(
 
     return scored_slots[:top_k]
 
-
-def _start_of_week(dt: datetime) -> datetime:
-    dt = dt.astimezone(timezone.utc)
-    weekday = dt.weekday()
-    start = dt - timedelta(days=weekday)
+def _start_of_week(dt: datetime, tz_str: str) -> datetime:
+    tz = ZoneInfo(tz_str)
+    local = dt.astimezone(tz)
+    weekday = local.weekday()  # Monday=0
+    start = local - timedelta(days=weekday)
     return start.replace(hour=0, minute=0, second=0, microsecond=0)
 
 
@@ -369,6 +370,11 @@ def _to_minutes(dt: datetime, reference: datetime) -> int:
 def _parse_event_time(value: Any, reference: datetime) -> Optional[int]:
     if value is None:
         return None
+
+    # Google Calendar style: {"dateTime": "..."} or {"date": "..."}
+    if isinstance(value, dict):
+        value = value.get("dateTime") or value.get("date")
+
     if isinstance(value, int):
         return value
     if isinstance(value, float):
@@ -440,7 +446,7 @@ def create_meeting_from_payload(
     if window_start is None or window_end is None:
         return None
 
-    reference_start = _start_of_week(window_start)
+    reference_start = _start_of_week(window_start, tz_str="America/New_York")
     people = _build_people_from_payload(people_payload, reference_start)
     if not people:
         return None
