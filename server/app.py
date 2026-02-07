@@ -1,6 +1,7 @@
 from datetime import datetime, timezone, timedelta
 import os
 from dotenv import load_dotenv
+import json
 
 load_dotenv()
 
@@ -11,16 +12,175 @@ from auth import (
     get_authorization_url,
     handle_callback,
     get_session,
-    get_calendar_service,
     get_people_service,
     get_user_by_email,
     get_calendar_service_for_user,
 )
-from db import init_db, SessionLocal, User, MeetingProposal, ConfirmedMeeting, MeetingInvite, Notification
+from db import (
+    init_db,
+    SessionLocal,
+    User,
+    MeetingProposal,
+    ConfirmedMeeting,
+    MeetingInvite,
+    ConfirmedMeetingInvite,
+    Notification,
+)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key-change-in-prod")
 CORS(app, resources={r"/api/*": {"origins": "http://localhost:5173"}}, supports_credentials=True)
+
+# ===== Scheduling helpers =====
+
+DEFAULT_TIMEZONE = "America/New_York"
+
+
+def _parse_datetime(value, field_name):
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError(f"invalid {field_name} datetime") from exc
+    raise ValueError(f"invalid {field_name} datetime")
+
+
+def _build_participant_payload(user, timezone_name, events=None):
+    return {
+        "id": f"user_{user.id}",
+        "name": user.name or "",
+        "email": user.email,
+        "timezone": timezone_name,
+        "events": events or [],
+    }
+
+
+def _normalize_google_event(event, fallback_timezone):
+    start = event.get("start", {})
+    end = event.get("end", {})
+    start_dt = start.get("dateTime") or start.get("date")
+    end_dt = end.get("dateTime") or end.get("date")
+
+    if not start_dt or not end_dt:
+        return None
+
+    if len(start_dt) == 10:
+        start_dt = f"{start_dt}T00:00:00Z"
+    if len(end_dt) == 10:
+        end_dt = f"{end_dt}T00:00:00Z"
+
+    return {
+        "start": start_dt,
+        "end": end_dt,
+        "timezone": start.get("timeZone") or fallback_timezone,
+        "title": event.get("summary", "") or "",
+        "description": event.get("description", "") or "",
+    }
+
+
+def _get_calendar_events_for_user(user_id, time_min, time_max, fallback_timezone):
+    if not time_min or not time_max:
+        return []
+    service = get_calendar_service_for_user(user_id)
+    if not service:
+        return []
+
+    try:
+        result = service.events().list(
+            calendarId="primary",
+            timeMin=time_min,
+            timeMax=time_max,
+            singleEvents=True,
+            orderBy="startTime",
+        ).execute()
+    except Exception:
+        return []
+
+    events = []
+    for event in result.get("items", []):
+        normalized = _normalize_google_event(event, fallback_timezone)
+        if normalized:
+            events.append(normalized)
+    return events
+
+
+def _get_freebusy_for_email(organizer_service, email, time_min, time_max, fallback_timezone):
+    """Query another user's busy times via FreeBusy using the organizer's credentials."""
+    if not organizer_service or not time_min or not time_max:
+        return []
+    try:
+        body = {
+            "timeMin": time_min,
+            "timeMax": time_max,
+            "items": [{"id": email}],
+        }
+        result = organizer_service.freebusy().query(body=body).execute()
+        busy_blocks = result.get("calendars", {}).get(email, {}).get("busy", [])
+        events = []
+        for block in busy_blocks:
+            events.append({
+                "start": block["start"],
+                "end": block["end"],
+                "timezone": fallback_timezone,
+                "title": "Busy",
+                "description": "",
+            })
+        return events
+    except Exception as e:
+        print(f"[freebusy] error querying {email}: {e}")
+        return []
+
+
+def _schedule_meeting(
+    participants_payload,
+    window_start,
+    window_end,
+    duration_minutes,
+    location_type="virtual",
+):
+    """
+    Placeholder scheduling function.
+    Accepts participant JSON in a shape similar to the requested format.
+    Returns start/end datetimes for the confirmed meeting.
+    """
+    try:
+        from scheduler import create_meeting_from_payload
+
+        org_settings_path = os.path.join(os.path.dirname(__file__), "org_settings.json")
+        print(f"[scheduler] window_start={window_start}, window_end={window_end}, duration={duration_minutes}min, location={location_type}")
+        print(f"[scheduler] participants: {len(participants_payload)}")
+        result = create_meeting_from_payload(
+            people_payload=participants_payload,
+            window_start=window_start,
+            window_end=window_end,
+            duration_minutes=duration_minutes,
+            location_type=location_type,
+            org_settings_path=org_settings_path,
+            top_k=1,
+        )
+        if result:
+            start_time, end_time, scored = result
+            print(f"[scheduler] SUCCESS: start={start_time}, end={end_time}, score={scored[0].score if scored else 'N/A'}")
+            return start_time, end_time
+        else:
+            print("[scheduler] returned None — no valid slots found")
+    except Exception as e:
+        print(f"[scheduler] ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+
+    print("[scheduler] FALLBACK: using simple window_start + duration")
+    duration = timedelta(minutes=duration_minutes)
+    start_time = window_start or (datetime.now(timezone.utc) + timedelta(hours=1))
+    end_time = start_time + duration
+    if window_end and end_time > window_end:
+        end_time = window_end
+        start_time = end_time - duration
+    return start_time, end_time
 
 # Initialize database tables on startup
 with app.app_context():
@@ -56,18 +216,67 @@ def api_events():
     token = session.get("session_token")
     if not token:
         return jsonify({"error": "not authenticated"}), 401
-    service = get_calendar_service(token)
-    if not service:
-        return jsonify({"error": "no calendar service"}), 500
-    now = datetime.now(timezone.utc).isoformat()
-    result = service.events().list(
-        calendarId="primary",
-        timeMin=now,
-        maxResults=20,
-        singleEvents=True,
-        orderBy="startTime",
-    ).execute()
-    return jsonify(result.get("items", []))
+    user_data = get_session(token)
+    if not user_data:
+        return jsonify({"error": "session expired"}), 401
+
+    db = SessionLocal()
+    try:
+        # Get all meetings the user organized or was invited to
+        organized = db.query(ConfirmedMeeting).filter(
+            ConfirmedMeeting.organizer_id == user_data["user_id"],
+        ).all()
+
+        invited = db.query(ConfirmedMeeting).join(
+            ConfirmedMeetingInvite,
+            ConfirmedMeetingInvite.confirmed_meeting_id == ConfirmedMeeting.id,
+        ).filter(
+            ConfirmedMeetingInvite.user_id == user_data["user_id"],
+        ).all()
+
+        # Deduplicate and sort
+        seen = set()
+        meetings = []
+        for m in organized + invited:
+            if m.id not in seen:
+                seen.add(m.id)
+                meetings.append(m)
+        meetings.sort(key=lambda m: m.start_time)
+
+        return jsonify([m.to_dict() for m in meetings])
+    finally:
+        db.close()
+
+
+@app.route("/api/events/<int:event_id>", methods=["DELETE"])
+def api_events_delete(event_id):
+    token = session.get("session_token")
+    if not token:
+        return jsonify({"error": "not authenticated"}), 401
+    user_data = get_session(token)
+    if not user_data:
+        return jsonify({"error": "session expired"}), 401
+
+    db = SessionLocal()
+    try:
+        meeting = db.query(ConfirmedMeeting).filter(
+            ConfirmedMeeting.id == event_id,
+        ).first()
+        if not meeting:
+            return jsonify({"error": "meeting not found"}), 404
+        if meeting.organizer_id != user_data["user_id"]:
+            return jsonify({"error": "only the organizer can delete this meeting"}), 403
+
+        # Also delete the parent proposal (cascades to invites)
+        proposal = meeting.proposal
+        if proposal:
+            db.delete(proposal)
+        else:
+            db.delete(meeting)
+        db.commit()
+        return jsonify({"message": "meeting deleted"})
+    finally:
+        db.close()
 
 
 @app.route("/api/contacts/search")
@@ -106,22 +315,163 @@ def api_events_create():
     token = session.get("session_token")
     if not token:
         return jsonify({"error": "not authenticated"}), 401
-    service = get_calendar_service(token)
-    if not service:
-        return jsonify({"error": "no calendar service"}), 500
+    user_data = get_session(token)
+    if not user_data:
+        return jsonify({"error": "session expired"}), 401
+
     data = request.get_json()
-    event = {
-        "summary": data.get("summary", "Meeting"),
-        "start": {"dateTime": data["start"], "timeZone": "America/New_York"},
-        "end": {"dateTime": data["end"], "timeZone": "America/New_York"},
-        "attendees": [{"email": e} for e in data.get("attendees", [])],
-    }
-    created = service.events().insert(
-        calendarId="primary",
-        body=event,
-        sendUpdates="all",
-    ).execute()
-    return jsonify({"id": created["id"], "htmlLink": created.get("htmlLink")})
+    duration_minutes = int(data.get("durationMinutes", 60))
+    location_type = data.get("locationType", "virtual")
+    attendee_emails = data.get("attendees", [])
+    summary = data.get("summary", "Meeting")
+    description = data.get("description")
+    urgency = data.get("urgency", "normal")
+    location = data.get("location")
+
+    # Parse the scheduling window
+    window_start = _parse_datetime(data.get("start"), "start")
+    window_end = _parse_datetime(data.get("end"), "end")
+    if not window_start or not window_end:
+        return jsonify({"error": "start and end are required"}), 400
+
+    # Ensure datetimes are timezone-aware
+    if window_start.tzinfo is None:
+        window_start = window_start.replace(tzinfo=timezone.utc)
+    if window_end.tzinfo is None:
+        window_end = window_end.replace(tzinfo=timezone.utc)
+
+    # Build participant payloads with calendar data
+    time_min = window_start.isoformat()
+    time_max = window_end.isoformat()
+    participants_payload = []
+
+    db = SessionLocal()
+    try:
+        # Add organizer's calendar
+        organizer = db.query(User).filter(User.id == user_data["user_id"]).first()
+        organizer_service = get_calendar_service_for_user(user_data["user_id"]) if organizer else None
+        if organizer:
+            organizer_events = _get_calendar_events_for_user(
+                organizer.id, time_min, time_max, DEFAULT_TIMEZONE
+            )
+            print(f"[events] organizer {organizer.email}: {len(organizer_events)} events")
+            for ev in organizer_events:
+                print(f"  - {ev.get('title','(no title)')} {ev.get('start')} → {ev.get('end')}")
+            participants_payload.append(
+                _build_participant_payload(organizer, DEFAULT_TIMEZONE, organizer_events)
+            )
+
+        # Add each attendee's calendar
+        invited_users = []
+        for email in attendee_emails:
+            user = db.query(User).filter(User.email == email).first()
+            if user:
+                invited_users.append(user)
+                user_events = _get_calendar_events_for_user(
+                    user.id, time_min, time_max, DEFAULT_TIMEZONE
+                )
+                print(f"[events] attendee {user.email} (user_id={user.id}): {len(user_events)} events")
+                for ev in user_events:
+                    print(f"  - {ev.get('title','(no title)')} {ev.get('start')} → {ev.get('end')}")
+                participants_payload.append(
+                    _build_participant_payload(user, DEFAULT_TIMEZONE, user_events)
+                )
+            else:
+                # Attendee not in our system — use FreeBusy via organizer's credentials
+                freebusy_events = _get_freebusy_for_email(
+                    organizer_service, email, time_min, time_max, DEFAULT_TIMEZONE
+                )
+                print(f"[events] attendee {email}: not in DB, FreeBusy returned {len(freebusy_events)} busy blocks")
+                for ev in freebusy_events:
+                    print(f"  - Busy {ev.get('start')} → {ev.get('end')}")
+                participants_payload.append({
+                    "id": email,
+                    "name": "",
+                    "email": email,
+                    "timezone": DEFAULT_TIMEZONE,
+                    "events": freebusy_events,
+                })
+
+        # Run the scheduler to find the optimal meeting time
+        start_time, end_time = _schedule_meeting(
+            participants_payload,
+            window_start,
+            window_end,
+            duration_minutes,
+            location_type=location_type,
+        )
+
+        # Create proposal
+        proposal = MeetingProposal(
+            organizer_id=user_data["user_id"],
+            title=summary,
+            description=description,
+            duration_minutes=duration_minutes,
+            urgency=urgency,
+            location=location,
+            window_start=window_start,
+            window_end=window_end,
+            status="confirmed",
+        )
+        db.add(proposal)
+        db.flush()
+
+        # Create invites for attendees in our system
+        for user in invited_users:
+            db.add(MeetingInvite(
+                proposal_id=proposal.id,
+                user_id=user.id,
+                is_required=True,
+                status="pending",
+            ))
+
+        # Create confirmed meeting with scheduler-determined times
+        confirmed = ConfirmedMeeting(
+            proposal_id=proposal.id,
+            organizer_id=user_data["user_id"],
+            title=summary,
+            description=description,
+            duration_minutes=duration_minutes,
+            urgency=urgency,
+            location=location,
+            start_time=start_time,
+            end_time=end_time,
+            final_location=location,
+            status="scheduled",
+        )
+        db.add(confirmed)
+        db.flush()
+
+        # Create confirmed invites
+        for user in invited_users:
+            db.add(ConfirmedMeetingInvite(
+                confirmed_meeting_id=confirmed.id,
+                user_id=user.id,
+                is_required=True,
+                status="pending",
+            ))
+
+        db.flush()
+
+        # Create notifications for all invitees (NOT the organizer)
+        for user in invited_users:
+            organizer_display = organizer.name or organizer.email if organizer else "Someone"
+            meeting_time = confirmed.start_time.strftime('%B %d, %Y at %I:%M %p')
+            notification = Notification(
+                user_id=user.id,
+                confirmed_meeting_id=confirmed.id,
+                type="meeting_confirmed",
+                title="Meeting invitation from " + organizer_display,
+                message="You're invited to '" + confirmed.title + "' on " + meeting_time,
+            )
+            db.add(notification)
+
+        db.commit()
+        db.refresh(confirmed)
+
+        return jsonify({"id": confirmed.id, "confirmed_meeting": confirmed.to_dict()}), 201
+    finally:
+        db.close()
 
 
 # --- Auth routes ---
@@ -281,6 +631,9 @@ def api_create_meeting():
     title = data.get("title")
     duration_minutes = data.get("duration_minutes")
     invited_emails = data.get("invited_emails", [])
+    timezone_name = data.get("timezone", DEFAULT_TIMEZONE)
+    location_type = data.get("location_type", "virtual")
+    participant_events = data.get("participant_events")  # optional: {email: [events]}
 
     if not title:
         return jsonify({"error": "title required"}), 400
@@ -288,6 +641,18 @@ def api_create_meeting():
         return jsonify({"error": "duration_minutes required"}), 400
     if not invited_emails:
         return jsonify({"error": "invited_emails required"}), 400
+    if participant_events is not None and not isinstance(participant_events, dict):
+        return jsonify({"error": "participant_events must be an object keyed by email"}), 400
+    try:
+        duration_minutes = int(duration_minutes)
+    except (TypeError, ValueError):
+        return jsonify({"error": "duration_minutes must be an integer"}), 400
+
+    try:
+        window_start = _parse_datetime(data.get("window_start"), "window_start")
+        window_end = _parse_datetime(data.get("window_end"), "window_end")
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     db = SessionLocal()
     try:
@@ -299,20 +664,43 @@ def api_create_meeting():
             duration_minutes=duration_minutes,
             urgency=data.get("urgency", "normal"),
             location=data.get("location"),
-            window_start=data.get("window_start"),
-            window_end=data.get("window_end"),
+            window_start=window_start,
+            window_end=window_end,
             status="pending",
         )
         db.add(proposal)
         db.flush()  # Get the proposal ID
 
+        organizer = db.query(User).filter(User.id == user_data["user_id"]).first()
+        participants_payload = []
+        if organizer:
+            organizer_events = None
+            if participant_events is None:
+                organizer_events = _get_calendar_events_for_user(
+                    organizer.id,
+                    window_start.isoformat() if window_start else None,
+                    window_end.isoformat() if window_end else None,
+                    timezone_name,
+                )
+            else:
+                organizer_events = participant_events.get(organizer.email)
+            participants_payload.append(
+                _build_participant_payload(
+                    organizer,
+                    timezone_name,
+                    organizer_events,
+                )
+            )
+
         # Create invites for each invited user
         not_found = []
+        invited_users = []
         for email in invited_emails:
             user = db.query(User).filter(User.email == email).first()
             if not user:
                 not_found.append(email)
                 continue
+            invited_users.append(user)
 
             invite = MeetingInvite(
                 proposal_id=proposal.id,
@@ -322,11 +710,86 @@ def api_create_meeting():
             )
             db.add(invite)
 
+        for user in invited_users:
+            user_events = None
+            if participant_events is None:
+                user_events = _get_calendar_events_for_user(
+                    user.id,
+                    window_start.isoformat() if window_start else None,
+                    window_end.isoformat() if window_end else None,
+                    timezone_name,
+                )
+            else:
+                user_events = participant_events.get(user.email)
+            participants_payload.append(
+                _build_participant_payload(
+                    user,
+                    timezone_name,
+                    user_events,
+                )
+            )
+
+        print("Scheduler payload:")
+        print(json.dumps(participants_payload, indent=2))
+
+        # Call scheduling function to create confirmed meeting
+        start_time, end_time = _schedule_meeting(
+            participants_payload,
+            window_start,
+            window_end,
+            duration_minutes,
+            location_type=location_type,
+        )
+
+        confirmed_meeting = ConfirmedMeeting(
+            proposal_id=proposal.id,
+            organizer_id=proposal.organizer_id,
+            title=proposal.title,
+            description=proposal.description,
+            duration_minutes=proposal.duration_minutes,
+            urgency=proposal.urgency,
+            location=proposal.location,
+            start_time=start_time,
+            end_time=end_time,
+            final_location=proposal.location,
+            status="scheduled",
+        )
+        db.add(confirmed_meeting)
+        db.flush()
+
+        for user in invited_users:
+            confirmed_invite = ConfirmedMeetingInvite(
+                confirmed_meeting_id=confirmed_meeting.id,
+                user_id=user.id,
+                is_required=True,
+                status="pending",
+            )
+            db.add(confirmed_invite)
+
+        proposal.status = "confirmed"
+
+        db.flush()
+
+        # Create notifications for all invitees (NOT the organizer)
+        for user in invited_users:
+            organizer_display = organizer.name or organizer.email if organizer else "Someone"
+            meeting_time = confirmed_meeting.start_time.strftime('%B %d, %Y at %I:%M %p')
+            notification = Notification(
+                user_id=user.id,
+                confirmed_meeting_id=confirmed_meeting.id,
+                type="meeting_confirmed",
+                title="Meeting invitation from " + organizer_display,
+                message="You're invited to '" + confirmed_meeting.title + "' on " + meeting_time,
+            )
+            db.add(notification)
+
         db.commit()
         db.refresh(proposal)
+        db.refresh(confirmed_meeting)
 
         response = {
             "proposal": proposal.to_dict(),
+            "confirmed_meeting": confirmed_meeting.to_dict(),
             "message": "Meeting proposal created successfully",
         }
         if not_found:

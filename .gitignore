@@ -3,3 +3,4 @@ __pycache__/
 venv/
 .env
 client_secret.json
+.DS_Store

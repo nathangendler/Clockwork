@@ -1,5 +1,14 @@
 from .database import get_db, init_db, engine, SessionLocal
-from .models import Base, User, Session, MeetingProposal, ConfirmedMeeting, MeetingInvite, Notification
+from .models import (
+    Base,
+    User,
+    Session,
+    MeetingProposal,
+    ConfirmedMeeting,
+    MeetingInvite,
+    ConfirmedMeetingInvite,
+    Notification,
+)
 
 __all__ = [
     "get_db",
@@ -12,5 +21,6 @@ __all__ = [
     "MeetingProposal",
     "ConfirmedMeeting",
     "MeetingInvite",
+    "ConfirmedMeetingInvite",
     "Notification",
 ]
