@@ -1,8 +1,11 @@
+import NotificationDropdown from './NotificationDropdown';
+
 export default function Header({ email }) {
   return (
     <div className="header">
       <h1>Clockwork</h1>
       <div className="header-right">
+        <NotificationDropdown />
         <span className="email">{email}</span>
         <a href="/auth/login" className="btn-logout" onClick={(e) => {
           e.preventDefault();
