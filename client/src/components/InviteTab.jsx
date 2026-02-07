@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState } from "react";
 
-export default function InviteTab() {
-  const [query, setQuery] = useState('');
+export default function InviteTab({ token }) {
+  const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [selected, setSelected] = useState([]);
   const [summary, setSummary] = useState('');
@@ -20,16 +20,25 @@ export default function InviteTab() {
     e.preventDefault();
     if (!query.trim()) return;
     setSearching(true);
-    fetch(`/api/contacts/search?q=${encodeURIComponent(query)}`, { credentials: 'include' })
-      .then(res => res.json())
-      .then(data => { setResults(data); setSearching(false); })
+
+    fetch(
+      `http://localhost:8080/api/contacts/search?q=${encodeURIComponent(query)}`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    )
+      .then((res) => res.json())
+      .then((data) => {
+        setResults(data);
+        setSearching(false);
+      })
       .catch(() => setSearching(false));
   }
 
   function toggleSelect(contact) {
-    setSelected(prev => {
-      const exists = prev.find(c => c.email === contact.email);
-      if (exists) return prev.filter(c => c.email !== contact.email);
+    setSelected((prev) => {
+      const exists = prev.find((c) => c.email === contact.email);
+      if (exists) return prev.filter((c) => c.email !== contact.email);
       return [...prev, contact];
     });
   }
@@ -52,10 +61,10 @@ export default function InviteTab() {
         urgency,
       }),
     })
-      .then(res => res.json())
-      .then(data => {
+      .then((res) => res.json())
+      .then((data) => {
         if (data.id) {
-          setStatus('success');
+          setStatus("success");
           setSelected([]);
           setSummary('');
           setDescription('');
@@ -67,12 +76,12 @@ export default function InviteTab() {
           setWindowStart('');
           setWindowEnd('');
           setResults([]);
-          setQuery('');
+          setQuery("");
         } else {
-          setStatus('error');
+          setStatus("error");
         }
       })
-      .catch(() => setStatus('error'));
+      .catch(() => setStatus("error"));
   }
 
   return (
@@ -83,26 +92,28 @@ export default function InviteTab() {
           type="text"
           placeholder="Search contacts..."
           value={query}
-          onChange={e => setQuery(e.target.value)}
+          onChange={(e) => setQuery(e.target.value)}
           className="search-input"
         />
         <button type="submit" className="btn-search" disabled={searching}>
-          {searching ? 'Searching...' : 'Search'}
+          {searching ? "Searching..." : "Search"}
         </button>
       </form>
 
       {/* Search results */}
       {results.length > 0 && (
         <div className="contact-results">
-          {results.map(contact => {
-            const isSelected = selected.some(c => c.email === contact.email);
+          {results.map((contact) => {
+            const isSelected = selected.some((c) => c.email === contact.email);
             return (
               <div
                 key={contact.email}
-                className={`contact-card ${isSelected ? 'selected' : ''}`}
+                className={`contact-card ${isSelected ? "selected" : ""}`}
                 onClick={() => toggleSelect(contact)}
               >
-                <div className="contact-name">{contact.name || contact.email}</div>
+                <div className="contact-name">
+                  {contact.name || contact.email}
+                </div>
                 <div className="contact-email">{contact.email}</div>
               </div>
             );
@@ -115,8 +126,12 @@ export default function InviteTab() {
         <div className="selected-section">
           <h3>Inviting ({selected.length})</h3>
           <div className="selected-chips">
-            {selected.map(c => (
-              <span key={c.email} className="chip" onClick={() => toggleSelect(c)}>
+            {selected.map((c) => (
+              <span
+                key={c.email}
+                className="chip"
+                onClick={() => toggleSelect(c)}
+              >
                 {c.name || c.email} &times;
               </span>
             ))}
@@ -128,7 +143,7 @@ export default function InviteTab() {
               type="text"
               placeholder="Meeting title"
               value={summary}
-              onChange={e => setSummary(e.target.value)}
+              onChange={(e) => setSummary(e.target.value)}
               className="form-input"
             />
             <label className="form-label">Description</label>
@@ -244,8 +259,12 @@ export default function InviteTab() {
             </button>
           </form>
 
-          {status === 'success' && <p className="success-msg">Meeting created and invites sent!</p>}
-          {status === 'error' && <p className="error-msg">Failed to create meeting. Try again.</p>}
+          {status === "success" && (
+            <p className="success-msg">Meeting created and invites sent!</p>
+          )}
+          {status === "error" && (
+            <p className="error-msg">Failed to create meeting. Try again.</p>
+          )}
         </div>
       )}
     </div>
