@@ -16,11 +16,53 @@ from auth import (
     get_user_by_email,
     get_calendar_service_for_user,
 )
-from db import init_db, SessionLocal, User, MeetingProposal, MeetingInvite
+from db import init_db, SessionLocal, User, MeetingProposal, ConfirmedMeeting, MeetingInvite, ConfirmedMeetingInvite
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key-change-in-prod")
 CORS(app, resources={r"/api/*": {"origins": "http://localhost:5173"}}, supports_credentials=True)
+
+# ===== Scheduling helpers =====
+
+DEFAULT_TIMEZONE = "America/New_York"
+
+
+def _parse_datetime(value, field_name):
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError(f"invalid {field_name} datetime") from exc
+    raise ValueError(f"invalid {field_name} datetime")
+
+
+def _build_participant_payload(user, timezone_name, events=None):
+    return {
+        "id": f"user_{user.id}",
+        "name": user.name or "",
+        "email": user.email,
+        "timezone": timezone_name,
+        "events": events or [],
+    }
+
+
+def _schedule_meeting(participants_payload, window_start, window_end, duration_minutes):
+    """
+    Placeholder scheduling function.
+    Accepts participant JSON in a shape similar to the requested format.
+    Returns start/end datetimes for the confirmed meeting.
+    """
+    duration = timedelta(minutes=duration_minutes)
+    start_time = window_start or (datetime.now(timezone.utc) + timedelta(hours=1))
+    end_time = start_time + duration
+    if window_end and end_time > window_end:
+        end_time = window_end
+        start_time = end_time - duration
+    return start_time, end_time
 
 # Initialize database tables on startup
 with app.app_context():
@@ -280,6 +322,8 @@ def api_create_meeting():
     title = data.get("title")
     duration_minutes = data.get("duration_minutes")
     invited_emails = data.get("invited_emails", [])
+    timezone_name = data.get("timezone", DEFAULT_TIMEZONE)
+    participant_events = data.get("participant_events") or {}  # optional: {email: [events]}
 
     if not title:
         return jsonify({"error": "title required"}), 400
@@ -287,6 +331,18 @@ def api_create_meeting():
         return jsonify({"error": "duration_minutes required"}), 400
     if not invited_emails:
         return jsonify({"error": "invited_emails required"}), 400
+    if not isinstance(participant_events, dict):
+        return jsonify({"error": "participant_events must be an object keyed by email"}), 400
+    try:
+        duration_minutes = int(duration_minutes)
+    except (TypeError, ValueError):
+        return jsonify({"error": "duration_minutes must be an integer"}), 400
+
+    try:
+        window_start = _parse_datetime(data.get("window_start"), "window_start")
+        window_end = _parse_datetime(data.get("window_end"), "window_end")
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     db = SessionLocal()
     try:
@@ -298,20 +354,33 @@ def api_create_meeting():
             duration_minutes=duration_minutes,
             urgency=data.get("urgency", "normal"),
             location=data.get("location"),
-            window_start=data.get("window_start"),
-            window_end=data.get("window_end"),
+            window_start=window_start,
+            window_end=window_end,
             status="pending",
         )
         db.add(proposal)
         db.flush()  # Get the proposal ID
 
+        organizer = db.query(User).filter(User.id == user_data["user_id"]).first()
+        participants_payload = []
+        if organizer:
+            participants_payload.append(
+                _build_participant_payload(
+                    organizer,
+                    timezone_name,
+                    participant_events.get(organizer.email),
+                )
+            )
+
         # Create invites for each invited user
         not_found = []
+        invited_users = []
         for email in invited_emails:
             user = db.query(User).filter(User.email == email).first()
             if not user:
                 not_found.append(email)
                 continue
+            invited_users.append(user)
 
             invite = MeetingInvite(
                 proposal_id=proposal.id,
@@ -321,11 +390,57 @@ def api_create_meeting():
             )
             db.add(invite)
 
+        for user in invited_users:
+            participants_payload.append(
+                _build_participant_payload(
+                    user,
+                    timezone_name,
+                    participant_events.get(user.email),
+                )
+            )
+
+        # Call scheduling function to create confirmed meeting
+        start_time, end_time = _schedule_meeting(
+            participants_payload,
+            window_start,
+            window_end,
+            duration_minutes,
+        )
+
+        confirmed_meeting = ConfirmedMeeting(
+            proposal_id=proposal.id,
+            organizer_id=proposal.organizer_id,
+            title=proposal.title,
+            description=proposal.description,
+            duration_minutes=proposal.duration_minutes,
+            urgency=proposal.urgency,
+            location=proposal.location,
+            start_time=start_time,
+            end_time=end_time,
+            final_location=proposal.location,
+            status="scheduled",
+        )
+        db.add(confirmed_meeting)
+        db.flush()
+
+        for user in invited_users:
+            confirmed_invite = ConfirmedMeetingInvite(
+                confirmed_meeting_id=confirmed_meeting.id,
+                user_id=user.id,
+                is_required=True,
+                status="pending",
+            )
+            db.add(confirmed_invite)
+
+        proposal.status = "confirmed"
+
         db.commit()
         db.refresh(proposal)
+        db.refresh(confirmed_meeting)
 
         response = {
             "proposal": proposal.to_dict(),
+            "confirmed_meeting": confirmed_meeting.to_dict(),
             "message": "Meeting proposal created successfully",
         }
         if not_found:

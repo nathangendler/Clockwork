@@ -88,7 +88,7 @@ CREATE TABLE IF NOT EXISTS confirmed_meetings (
 
 -- ============================================
 -- MEETING INVITES TABLE
--- Stores invites for each user
+-- Stores proposal invites for each user
 -- When user opens extension, they see all their pending invites
 -- ============================================
 CREATE TABLE IF NOT EXISTS meeting_invites (
@@ -108,6 +108,26 @@ CREATE TABLE IF NOT EXISTS meeting_invites (
 );
 
 -- ============================================
+-- CONFIRMED MEETING INVITES TABLE
+-- Stores confirmed meeting invites for each user
+-- ============================================
+CREATE TABLE IF NOT EXISTS confirmed_meeting_invites (
+    id SERIAL PRIMARY KEY,
+    confirmed_meeting_id INTEGER REFERENCES confirmed_meetings(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+
+    -- Invite status
+    status VARCHAR(50) DEFAULT 'pending',  -- pending, accepted, declined
+    is_required BOOLEAN DEFAULT TRUE,  -- required vs optional attendee
+
+    -- Timestamps
+    invited_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    responded_at TIMESTAMP WITH TIME ZONE,
+
+    UNIQUE(confirmed_meeting_id, user_id)
+);
+
+-- ============================================
 -- INDEXES
 -- ============================================
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
@@ -120,3 +140,6 @@ CREATE INDEX IF NOT EXISTS idx_confirmed_meetings_status ON confirmed_meetings(s
 CREATE INDEX IF NOT EXISTS idx_invites_proposal ON meeting_invites(proposal_id);
 CREATE INDEX IF NOT EXISTS idx_invites_user ON meeting_invites(user_id);
 CREATE INDEX IF NOT EXISTS idx_invites_status ON meeting_invites(status);
+CREATE INDEX IF NOT EXISTS idx_confirmed_invites_meeting ON confirmed_meeting_invites(confirmed_meeting_id);
+CREATE INDEX IF NOT EXISTS idx_confirmed_invites_user ON confirmed_meeting_invites(user_id);
+CREATE INDEX IF NOT EXISTS idx_confirmed_invites_status ON confirmed_meeting_invites(status);

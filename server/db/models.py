@@ -22,6 +22,7 @@ class User(Base):
     organized_proposals = relationship("MeetingProposal", back_populates="organizer", cascade="all, delete-orphan")
     confirmed_meetings = relationship("ConfirmedMeeting", back_populates="organizer", cascade="all, delete-orphan")
     proposal_invites = relationship("MeetingInvite", back_populates="user", cascade="all, delete-orphan")
+    confirmed_invites = relationship("ConfirmedMeetingInvite", back_populates="user", cascade="all, delete-orphan")
 
     def to_dict(self):
         return {
@@ -104,7 +105,7 @@ class MeetingProposal(Base):
         if include_invites:
             data["invites"] = [inv.to_dict() for inv in self.invites]
         if self.confirmed_meeting:
-            data["confirmed_meeting"] = self.confirmed_meeting.to_dict()
+            data["confirmed_meeting"] = self.confirmed_meeting.to_dict(include_invites=False)
         return data
 
 
@@ -139,8 +140,9 @@ class ConfirmedMeeting(Base):
 
     organizer = relationship("User", back_populates="confirmed_meetings")
     proposal = relationship("MeetingProposal", back_populates="confirmed_meeting")
+    invites = relationship("ConfirmedMeetingInvite", back_populates="meeting", cascade="all, delete-orphan")
 
-    def to_dict(self):
+    def to_dict(self, include_invites=True):
         return {
             "id": self.id,
             "proposal_id": self.proposal_id,
@@ -155,6 +157,7 @@ class ConfirmedMeeting(Base):
             "final_location": self.final_location,
             "status": self.status,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            "invites": [inv.to_dict() for inv in self.invites] if include_invites else [],
         }
 
 
@@ -186,6 +189,41 @@ class MeetingInvite(Base):
         return {
             "id": self.id,
             "proposal_id": self.proposal_id,
+            "user_id": self.user_id,
+            "email": self.user.email if self.user else None,
+            "name": self.user.name if self.user else None,
+            "status": self.status,
+            "is_required": self.is_required,
+            "invited_at": self.invited_at.isoformat() if self.invited_at else None,
+            "responded_at": self.responded_at.isoformat() if self.responded_at else None,
+        }
+
+
+class ConfirmedMeetingInvite(Base):
+    """
+    Confirmed meeting invites for each user.
+    """
+    __tablename__ = "confirmed_meeting_invites"
+
+    id = Column(Integer, primary_key=True)
+    confirmed_meeting_id = Column(Integer, ForeignKey("confirmed_meetings.id", ondelete="CASCADE"))
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+
+    # Invite status
+    status = Column(String(50), default="pending")  # pending, accepted, declined
+    is_required = Column(Boolean, default=True)  # required vs optional attendee
+
+    # Timestamps
+    invited_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    responded_at = Column(DateTime(timezone=True))
+
+    meeting = relationship("ConfirmedMeeting", back_populates="invites")
+    user = relationship("User", back_populates="confirmed_invites")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "confirmed_meeting_id": self.confirmed_meeting_id,
             "user_id": self.user_id,
             "email": self.user.email if self.user else None,
             "name": self.user.name if self.user else None,
