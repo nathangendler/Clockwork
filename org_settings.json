@@ -1,0 +1,40 @@
+{
+  "organization": {
+    "name": "Example Company",
+    "default_timezone": "America/New_York"
+  },
+  "work_hours": {
+    "start": 540,
+    "end": 1020,
+    "description": "9:00 AM - 5:00 PM (in minutes from midnight)"
+  },
+  "lunch_window": {
+    "start": 720,
+    "end": 780,
+    "description": "12:00 PM - 1:00 PM (in minutes from midnight)"
+  },
+  "meeting_preferences": {
+    "default_duration": 60,
+    "interval_minutes": 15,
+    "description": "Default 60-min meetings, scheduled in 15-min intervals"
+  },
+  "penalties": {
+    "outside_work_hours": 50,
+    "overlaps_lunch": 30,
+    "early_morning": 20,
+    "late_evening": 25,
+    "weekend": 40,
+    "friday_afternoon": 15,
+    "no_morning_buffer": 10,
+    "no_evening_buffer": 10,
+    "per_additional_timezone": 5,
+    "description": "Score penalties for non-ideal meeting times"
+  },
+  "bonuses": {
+    "optimal_time_slot": 15,
+    "monday_morning": 10,
+    "in_person_midday": 5,
+    "virtual_meeting": 5,
+    "description": "Score bonuses for ideal meeting times"
+  }
+}

@@ -1,0 +1,66 @@
+[
+  {
+    "id": "person1",
+    "name": "Person One",
+    "email": "person1@example.com",
+    "timezone": "America/New_York",
+    "preferences": {
+      "preferred_meeting_times": ["afternoon"],
+      "avoid_back_to_back": true,
+      "min_break_minutes": 15
+    },
+    "events": [
+      {
+        "start": { "dateTime": "2026-02-08T10:00:00-05:00" },
+        "end": { "dateTime": "2026-02-08T13:00:00-05:00" },
+        "summary": "Morning Block"
+      },
+      {
+        "start": { "dateTime": "2026-02-08T16:00:00-05:00" },
+        "end": { "dateTime": "2026-02-08T20:00:00-05:00" },
+        "summary": "Evening Block"
+      }
+    ]
+  },
+  {
+    "id": "person2",
+    "name": "Person Two",
+    "email": "person2@example.com",
+    "timezone": "America/New_York",
+    "preferences": {
+      "preferred_meeting_times": ["morning", "afternoon"],
+      "avoid_back_to_back": false,
+      "min_break_minutes": 10
+    },
+    "events": [
+      {
+        "start": { "dateTime": "2026-02-08T09:00:00-05:00" },
+        "end": { "dateTime": "2026-02-08T10:00:00-05:00" },
+        "summary": "Morning Meeting"
+      },
+      {
+        "start": { "dateTime": "2026-02-08T13:00:00-05:00" },
+        "end": { "dateTime": "2026-02-08T14:00:00-05:00" },
+        "summary": "Midday Meeting"
+      }
+    ]
+  },
+  {
+    "id": "person3",
+    "name": "Person Three",
+    "email": "person3@example.com",
+    "timezone": "America/New_York",
+    "preferences": {
+      "preferred_meeting_times": ["afternoon"],
+      "avoid_back_to_back": false,
+      "min_break_minutes": 10
+    },
+    "events": [
+      {
+        "start": { "dateTime": "2026-02-08T16:00:00-05:00" },
+        "end": { "dateTime": "2026-02-08T18:00:00-05:00" },
+        "summary": "Late Afternoon Block"
+      }
+    ]
+  }
+]

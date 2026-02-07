@@ -1,0 +1,76 @@
+[
+  {
+    "id": "alice",
+    "name": "Alice Johnson",
+    "email": "alice@example.com",
+    "timezone": "America/New_York",
+    "preferences": {
+      "preferred_meeting_times": ["morning"],
+      "avoid_back_to_back": true,
+      "min_break_minutes": 15
+    },
+    "events": [
+      {
+        "start": {"dateTime": "2024-03-15T09:00:00-05:00"},
+        "end": {"dateTime": "2024-03-15T10:00:00-05:00"},
+        "summary": "Team Standup"
+      },
+      {
+        "start": {"dateTime": "2024-03-15T11:00:00-05:00"},
+        "end": {"dateTime": "2024-03-15T12:00:00-05:00"},
+        "summary": "Client Review"
+      },
+      {
+        "start": {"dateTime": "2024-03-15T14:00:00-05:00"},
+        "end": {"dateTime": "2024-03-15T15:30:00-05:00"},
+        "summary": "Project Planning"
+      }
+    ]
+  },
+  {
+    "id": "bob",
+    "name": "Bob Smith",
+    "email": "bob@example.com",
+    "timezone": "America/New_York",
+    "preferences": {
+      "preferred_meeting_times": ["afternoon"],
+      "avoid_back_to_back": true,
+      "min_break_minutes": 15
+    },
+    "events": [
+      {
+        "start": {"dateTime": "2024-03-15T10:00:00-05:00"},
+        "end": {"dateTime": "2024-03-15T11:00:00-05:00"},
+        "summary": "Deep Work Block"
+      },
+      {
+        "start": {"dateTime": "2024-03-15T13:00:00-05:00"},
+        "end": {"dateTime": "2024-03-15T14:00:00-05:00"},
+        "summary": "Lunch Break"
+      }
+    ]
+  },
+  {
+    "id": "carol",
+    "name": "Carol Davis",
+    "email": "carol@example.com",
+    "timezone": "America/Los_Angeles",
+    "preferences": {
+      "preferred_meeting_times": ["morning", "afternoon"],
+      "avoid_back_to_back": false,
+      "min_break_minutes": 10
+    },
+    "events": [
+      {
+        "start": {"dateTime": "2024-03-15T09:00:00-08:00"},
+        "end": {"dateTime": "2024-03-15T09:30:00-08:00"},
+        "summary": "Email Review"
+      },
+      {
+        "start": {"dateTime": "2024-03-15T15:00:00-08:00"},
+        "end": {"dateTime": "2024-03-15T16:00:00-08:00"},
+        "summary": "1-on-1 with Manager"
+      }
+    ]
+  }
+]
