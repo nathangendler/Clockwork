@@ -194,3 +194,55 @@ class MeetingInvite(Base):
             "invited_at": self.invited_at.isoformat() if self.invited_at else None,
             "responded_at": self.responded_at.isoformat() if self.responded_at else None,
         }
+
+
+class Notification(Base):
+    """
+    LinkedIn-style notifications for meeting confirmations.
+    Sent to invitees (not the host) when a meeting is confirmed by the algorithm.
+    """
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    confirmed_meeting_id = Column(Integer, ForeignKey("confirmed_meetings.id", ondelete="CASCADE"))
+
+    # Notification type and content
+    type = Column(String(50), nullable=False, default="meeting_confirmed")
+    title = Column(String(255), nullable=False)
+    message = Column(Text)
+
+    # Status tracking
+    is_read = Column(Boolean, default=False)
+    response = Column(String(50))  # accepted, declined, null if not responded
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    responded_at = Column(DateTime(timezone=True))
+
+    user = relationship("User", backref="notifications")
+    confirmed_meeting = relationship("ConfirmedMeeting", backref="notifications")
+
+    def to_dict(self):
+        meeting = self.confirmed_meeting
+        organizer = meeting.organizer if meeting else None
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "type": self.type,
+            "title": self.title,
+            "message": self.message,
+            "is_read": self.is_read,
+            "response": self.response,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "responded_at": self.responded_at.isoformat() if self.responded_at else None,
+            "meeting": {
+                "id": meeting.id,
+                "title": meeting.title,
+                "start_time": meeting.start_time.isoformat() if meeting.start_time else None,
+                "end_time": meeting.end_time.isoformat() if meeting.end_time else None,
+                "location": meeting.final_location or meeting.location,
+                "organizer_name": organizer.name if organizer else None,
+                "organizer_email": organizer.email if organizer else None,
+            } if meeting else None,
+        }
