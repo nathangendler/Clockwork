@@ -552,7 +552,8 @@ def api_search_users():
 
     db = SessionLocal()
     try:
-        users = db.query(User).filter(User.email.ilike(f"%{query}%")).limit(10).all()
+        search_pattern = "%" + query + "%"
+        users = db.query(User).filter(User.email.ilike(search_pattern)).limit(10).all()
         return jsonify([u.to_dict() for u in users])
     finally:
         db.close()
@@ -806,7 +807,7 @@ def api_create_meeting():
             "message": "Meeting proposal created successfully",
         }
         if not_found:
-            response["warning"] = f"Users not found: {not_found}"
+            response["warning"] = "Users not found: " + str(not_found)
 
         return jsonify(response), 201
     finally:
@@ -910,12 +911,14 @@ def api_confirm_proposal(proposal_id):
         organizer_id = proposal.organizer_id
         for invite in proposal.invites:
             if invite.user_id != organizer_id:  # Skip the host
+                organizer_display = proposal.organizer.name or proposal.organizer.email
+                meeting_time = confirmed.start_time.strftime('%B %d, %Y at %I:%M %p')
                 notification = Notification(
                     user_id=invite.user_id,
                     confirmed_meeting_id=confirmed.id,
                     type="meeting_confirmed",
-                    title=f"Meeting invitation from {proposal.organizer.name or proposal.organizer.email}",
-                    message=f"You're invited to '{confirmed.title}' on {confirmed.start_time.strftime('%B %d, %Y at %I:%M %p')}",
+                    title="Meeting invitation from " + organizer_display,
+                    message="You're invited to '" + confirmed.title + "' on " + meeting_time,
                 )
                 db.add(notification)
 
@@ -1008,7 +1011,7 @@ def api_respond_to_invite(invite_id):
         db.refresh(invite)
 
         return jsonify({
-            "message": f"Invite {response}",
+            "message": "Invite " + response,
             "invite": invite.to_dict(),
         })
     finally:
@@ -1125,7 +1128,7 @@ def api_respond_to_notification(notification_id):
         db.refresh(notification)
 
         return jsonify({
-            "message": f"Meeting {response}",
+            "message": "Meeting " + response,
             "notification": notification.to_dict(),
         })
     finally:
