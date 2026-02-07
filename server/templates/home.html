@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clockwork - Home</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #f5f5f5;
+        }
+        .container {
+            text-align: center;
+            background: white;
+            padding: 48px;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            margin-bottom: 8px;
+            color: #333;
+        }
+        .email {
+            color: #4285f4;
+            font-size: 18px;
+            margin-bottom: 32px;
+        }
+        .status {
+            color: #34a853;
+            font-size: 14px;
+            margin-bottom: 24px;
+        }
+        .btn-logout {
+            display: inline-block;
+            padding: 10px 24px;
+            background-color: #ea4335;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+        .btn-logout:hover {
+            background-color: #c5221f;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Clockwork</h1>
+        <p class="status">Signed in &bull; Google Calendar connected</p>
+        <p class="email">{{ email }}</p>
+        <a href="/logout" class="btn-logout">Sign Out</a>
+    </div>
+</body>
+</html>
