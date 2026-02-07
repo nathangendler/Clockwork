@@ -1,35 +1,48 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { useState, useEffect } from 'react';
+import Header from './components/Header';
+import Tabs from './components/Tabs';
+import CalendarTab from './components/CalendarTab';
+import InviteTab from './components/InviteTab';
+import './App.css';
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [email, setEmail] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('calendar');
+
+  useEffect(() => {
+    fetch('/api/me', { credentials: 'include' })
+      .then(res => {
+        if (!res.ok) throw new Error('not authed');
+        return res.json();
+      })
+      .then(data => { setEmail(data.email); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  if (loading) return null;
+
+  if (!email) {
+    return (
+      <div className="login-container">
+        <div className="login-card">
+          <h1>Clockwork</h1>
+          <p className="login-desc">Sign in to manage your calendar</p>
+          <a href="/auth/login" className="btn-google">Sign in with Google</a>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+    <div className="app">
+      <Header email={email} />
+      <Tabs activeTab={activeTab} onTabChange={setActiveTab} />
+      <div className="content">
+        {activeTab === 'calendar' ? <CalendarTab /> : <InviteTab />}
       </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+    </div>
+  );
 }
 
-export default App
+export default App;

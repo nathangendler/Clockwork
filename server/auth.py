@@ -10,6 +10,7 @@ sessions = {}
 SCOPES = [
     "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/directory.readonly",
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
 ]
@@ -66,3 +67,10 @@ def get_calendar_service(session_token):
     if not sess:
         return None
     return build("calendar", "v3", credentials=sess["credentials"])
+
+
+def get_people_service(session_token):
+    sess = get_session(session_token)
+    if not sess:
+        return None
+    return build("people", "v1", credentials=sess["credentials"])
