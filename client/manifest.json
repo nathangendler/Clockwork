@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Clockwork",
+  "version": "1.0.0",
+  "description": "Clockwork Chrome Extension",
+  "permissions": ["identity", "storage"],
+  "host_permissions": [
+    "http://localhost:8080/*",
+    "https://accounts.google.com/*"
+  ],
+  "action": {
+    "default_popup": "index.html"
+  },
+  "icons": {}
+}
