@@ -1,0 +1,230 @@
+# Clockwork - Enterprise Meeting Scheduler
+
+## Project Overview
+Clockwork optimizes meeting scheduling across the enterprise by unifying and analyzing all organizational calendars to find optimal meeting times using multi-objective optimization algorithms.
+
+## Architecture
+
+### Workstreams
+1. **Integrations** - Pull calendar data from Google Calendar
+2. **Optimization Algorithms** - Multi-objective optimization for finding optimal meeting times
+3. **Backend** - FastAPI server, data processing, algorithm execution
+4. **Frontend** - React.js UI for calendar visualization and meeting scheduling
+
+## Core Optimization Objectives
+
+When scheduling meetings, optimize for these competing objectives:
+
+### 1. Maximize Attendance
+- All required attendees must be available
+- Minimize conflicts with existing meetings
+- Hard constraint: everyone must be free
+
+### 2. Minimize Calendar Fragmentation
+- Avoid splitting long focus blocks
+- Don't turn a 3-hour focus block into: 1hr + meeting + 1hr
+- Preserve continuous work time
+- Penalty function: Higher penalty for breaking longer blocks
+
+### 3. Respect Timezones & Working Hours
+- Avoid early morning/late evening for any participant
+- Minimize "timezone pain" (e.g., 3am meetings)
+- Fair distribution - don't always punish the same person
+- Working hours: typically 9am-6pm local time
+
+### 4. Minimize Travel Time (in-person meetings)
+- Cluster meetings at same physical location
+- Consider commute time between locations
+- Back-to-back meetings should be in same building
+
+### 5. Optimize for Productivity Patterns
+- Deep work in morning, meetings in afternoon
+- Avoid scheduling right before/after lunch
+- Respect "no meeting days" (e.g., "Focus Fridays")
+- Different roles have different productivity patterns
+
+### 6. Minimize Context Switching
+- Group similar meetings together
+- Batch all 1:1s in one afternoon
+- Keep engineering meetings separate from sales meetings
+- Clustering bonus for related meeting types
+
+### 7. Respect Meeting Cadence
+- Weekly 1:1s at same time each week (consistency)
+- Sprint planning always Monday 9am
+- Don't schedule over recurring commitments
+- Maintain ritual meeting times
+
+## Technical Approach
+
+### Recommended Algorithms
+- **NSGA-III** (Pareto Multi-Objective Optimization) - Primary algorithm
+- **Constraint Satisfaction Problem (CSP)** solver for hard constraints
+- **Graph-based conflict detection** for multiple meetings
+- **LLM + Optimization hybrid** for context understanding
+
+### Key Data Structures
+```python
+Meeting = {
+    'participants': List[Person],
+    'duration': int,  # minutes
+    'required_attendees': List[Person],
+    'optional_attendees': List[Person],
+    'location': Optional[str],
+    'meeting_type': str,  # '1:1', 'team', 'all-hands', etc.
+    'recurrence': Optional[RecurrenceRule]
+}
+
+Person = {
+    'name': str,
+    'timezone': str,
+    'calendar': List[BusyBlock],
+    'preferences': Preferences,
+    'role': str
+}
+
+TimeSlot = {
+    'start': datetime,
+    'end': datetime,
+    'score': float,
+    'objectives': {
+        'timezone_pain': float,
+        'fragmentation': float,
+        'focus_disruption': float,
+        'clustering': float
+    }
+}
+```
+
+### Scoring Function
+```python
+def score_meeting_time(time, participants, constraints):
+    score = 100
+    
+    # Hard constraints (must satisfy)
+    if not all_available(time, participants):
+        return -inf
+    
+    # Soft constraints (weighted)
+    score -= 30 * calculate_timezone_pain(time, participants)
+    score -= 25 * calculate_fragmentation(time, participants)
+    score -= 20 * calculate_focus_disruption(time, participants)
+    score += 15 * calculate_clustering_benefit(time, participants)
+    score += 10 * calculate_productivity_fit(time, participants)
+    
+    return score
+```
+
+## Development Guidelines
+
+### Code Style
+- Use TypeScript for frontend
+- Use Python 3.11+ for backend
+- Type hints required for all Python functions
+- Async/await for all I/O operations
+- Write docstrings for all public functions
+
+### Testing
+- Unit tests for all optimization algorithms
+- Integration tests for calendar API
+- Test edge cases: timezones, conflicts, no available times
+
+### Performance
+- Optimize for <5 second response time for single meeting
+- Handle up to 100 participants efficiently
+- Cache calendar data (refresh every 5 minutes)
+- Async processing for multiple meeting optimization
+
+## Tech Stack
+
+### Backend
+- FastAPI (Python)
+- Google Calendar API
+- Redis (caching)
+- PostgreSQL (data storage)
+- pymoo (multi-objective optimization)
+- networkx (graph algorithms)
+
+### Frontend
+- React 18+
+- JavaScript
+- Tailwind CSS
+- FullCalendar.js (calendar UI)
+- Recharts (visualization)
+
+### Optimization Libraries
+- `pymoo` - NSGA-III implementation
+- `python-constraint` - CSP solver
+- `networkx` - Graph algorithms
+- `pulp` or `ortools` - Linear programming
+
+## Key Features to Implement
+
+### MVP (Phase 1)
+1. Google Calendar integration
+2. Basic optimization (greedy algorithm)
+3. Single meeting scheduling
+4. Calendar visualization
+5. Top 3 time slot recommendations
+
+### Phase 2
+1. NSGA-III Pareto optimization
+2. Show tradeoffs between solutions
+3. Multiple meeting optimization
+4. Conflict graph visualization
+5. User preference learning
+
+### Phase 3
+1. LLM-guided optimization
+2. Meeting type detection
+3. Historical data analysis
+4. Team-wide optimization
+5. Automated scheduling
+
+## Important Constraints
+
+### Hard Constraints (MUST satisfy)
+- All required attendees available
+- Within working hours for all participants
+- No double-booking
+- Respects out-of-office blocks
+- Minimum duration requirements met
+
+### Soft Constraints (optimize for)
+- All 7 optimization objectives listed above
+- User preferences (morning person vs night owl)
+- Company culture (no meeting Fridays)
+- Team norms (eng standups at 9:30am)
+
+## File Structure
+```
+clockwork/
+├── backend/
+│   ├── api/                 # FastAPI routes
+│   ├── integrations/        # Google Cal API
+│   ├── optimization/        # Core algorithms
+│   │   ├── nsga3.py
+│   │   ├── greedy.py
+│   │   ├── csp.py
+│   │   └── scoring.py
+│   ├── models/              # Data models
+│   └── utils/               # Helper functions
+├── frontend/
+│   ├── components/          # React components
+│   ├── pages/               # Next.js pages
+│   ├── lib/                 # Utilities
+│   └── types/               # TypeScript types
+└── tests/
+    ├── unit/
+    └── integration/
+```
+
+## Notes
+- This is a hackathon project - prioritize impressive demos over perfection
+- Focus on visual impact: show Pareto frontiers, conflict graphs, before/after
+- The LLM + optimization hybrid is the most novel approach
+- Multi-objective optimization is the key differentiator from existing tools
+
+## First Step:
+- I think the google auth thing is already set up and I want to make it so that once users sign into this platform using the google auth extension, I can store the users info in a database (postgresql)
+- Then, I want to use this database such that when a user wants to set up meetings with other people, it looks those users up and then checks their google calender API to pull data from and then sends that to a genetic algorithm to optimise

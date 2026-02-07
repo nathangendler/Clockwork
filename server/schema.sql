@@ -128,6 +128,30 @@ CREATE TABLE IF NOT EXISTS confirmed_meeting_invites (
 );
 
 -- ============================================
+-- NOTIFICATIONS TABLE
+-- LinkedIn-style notifications for meeting confirmations
+-- Sent to invitees (not host) when meeting is confirmed
+-- ============================================
+CREATE TABLE IF NOT EXISTS notifications (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    confirmed_meeting_id INTEGER REFERENCES confirmed_meetings(id) ON DELETE CASCADE,
+
+    -- Notification type and content
+    type VARCHAR(50) NOT NULL DEFAULT 'meeting_confirmed',  -- meeting_confirmed, meeting_updated, etc.
+    title VARCHAR(255) NOT NULL,
+    message TEXT,
+
+    -- Status tracking
+    is_read BOOLEAN DEFAULT FALSE,
+    response VARCHAR(50),  -- accepted, declined, null if not responded
+
+    -- Timestamps
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    responded_at TIMESTAMP WITH TIME ZONE
+);
+
+-- ============================================
 -- INDEXES
 -- ============================================
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
@@ -143,3 +167,6 @@ CREATE INDEX IF NOT EXISTS idx_invites_status ON meeting_invites(status);
 CREATE INDEX IF NOT EXISTS idx_confirmed_invites_meeting ON confirmed_meeting_invites(confirmed_meeting_id);
 CREATE INDEX IF NOT EXISTS idx_confirmed_invites_user ON confirmed_meeting_invites(user_id);
 CREATE INDEX IF NOT EXISTS idx_confirmed_invites_status ON confirmed_meeting_invites(status);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_meeting ON notifications(confirmed_meeting_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(is_read);

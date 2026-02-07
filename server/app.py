@@ -16,7 +16,16 @@ from auth import (
     get_user_by_email,
     get_calendar_service_for_user,
 )
-from db import init_db, SessionLocal, User, MeetingProposal, ConfirmedMeeting, MeetingInvite, ConfirmedMeetingInvite
+from db import (
+    init_db,
+    SessionLocal,
+    User,
+    MeetingProposal,
+    ConfirmedMeeting,
+    MeetingInvite,
+    ConfirmedMeetingInvite,
+    Notification,
+)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key-change-in-prod")
@@ -798,6 +807,86 @@ def api_get_meeting(meeting_id):
         db.close()
 
 
+@app.route("/api/meetings/<int:proposal_id>/confirm", methods=["POST"])
+def api_confirm_proposal(proposal_id):
+    """
+    Confirm a meeting proposal with a scheduled time (called by algorithm).
+    Creates a ConfirmedMeeting from the proposal.
+
+    Request body:
+    {
+        "start_time": "2024-02-11T14:00:00Z",
+        "end_time": "2024-02-11T14:30:00Z",
+        "final_location": "Zoom"  // optional, defaults to proposal location
+    }
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "JSON body required"}), 400
+
+    start_time = data.get("start_time")
+    end_time = data.get("end_time")
+
+    if not start_time or not end_time:
+        return jsonify({"error": "start_time and end_time required"}), 400
+
+    db = SessionLocal()
+    try:
+        proposal = db.query(MeetingProposal).filter(MeetingProposal.id == proposal_id).first()
+        if not proposal:
+            return jsonify({"error": "proposal not found"}), 404
+
+        if proposal.status == "confirmed":
+            return jsonify({"error": "proposal already confirmed"}), 400
+
+        # Create confirmed meeting from proposal
+        confirmed = ConfirmedMeeting(
+            proposal_id=proposal.id,
+            organizer_id=proposal.organizer_id,
+            title=proposal.title,
+            description=proposal.description,
+            duration_minutes=proposal.duration_minutes,
+            urgency=proposal.urgency,
+            location=proposal.location,
+            start_time=datetime.fromisoformat(start_time.replace("Z", "+00:00")),
+            end_time=datetime.fromisoformat(end_time.replace("Z", "+00:00")),
+            final_location=data.get("final_location", proposal.location),
+            status="scheduled",
+        )
+        db.add(confirmed)
+
+        # Update proposal status
+        proposal.status = "confirmed"
+        proposal.updated_at = datetime.now(timezone.utc)
+
+        db.commit()
+        db.refresh(confirmed)
+
+        # Create notifications for all invitees (NOT the host/organizer)
+        organizer_id = proposal.organizer_id
+        for invite in proposal.invites:
+            if invite.user_id != organizer_id:  # Skip the host
+                notification = Notification(
+                    user_id=invite.user_id,
+                    confirmed_meeting_id=confirmed.id,
+                    type="meeting_confirmed",
+                    title=f"Meeting invitation from {proposal.organizer.name or proposal.organizer.email}",
+                    message=f"You're invited to '{confirmed.title}' on {confirmed.start_time.strftime('%B %d, %Y at %I:%M %p')}",
+                )
+                db.add(notification)
+
+        db.commit()
+        db.refresh(proposal)
+
+        return jsonify({
+            "message": "Meeting confirmed successfully",
+            "confirmed_meeting": confirmed.to_dict(),
+            "proposal": proposal.to_dict(),
+        })
+    finally:
+        db.close()
+
+
 # ============ INVITE ENDPOINTS ============
 
 @app.route("/api/invites", methods=["GET"])
@@ -877,6 +966,123 @@ def api_respond_to_invite(invite_id):
         return jsonify({
             "message": f"Invite {response}",
             "invite": invite.to_dict(),
+        })
+    finally:
+        db.close()
+
+
+# ============ NOTIFICATION ENDPOINTS ============
+
+@app.route("/api/notifications", methods=["GET"])
+def api_get_notifications():
+    """
+    Get all notifications for the current user.
+    Returns LinkedIn-style meeting confirmation notifications.
+    """
+    token = session.get("session_token")
+    user_data = get_session(token)
+    if not user_data:
+        return jsonify({"error": "unauthorized"}), 401
+
+    db = SessionLocal()
+    try:
+        notifications = db.query(Notification).filter(
+            Notification.user_id == user_data["user_id"]
+        ).order_by(Notification.created_at.desc()).all()
+
+        return jsonify([n.to_dict() for n in notifications])
+    finally:
+        db.close()
+
+
+@app.route("/api/notifications/unread-count", methods=["GET"])
+def api_get_unread_count():
+    """Get count of unread notifications."""
+    token = session.get("session_token")
+    user_data = get_session(token)
+    if not user_data:
+        return jsonify({"error": "unauthorized"}), 401
+
+    db = SessionLocal()
+    try:
+        count = db.query(Notification).filter(
+            Notification.user_id == user_data["user_id"],
+            Notification.is_read == False
+        ).count()
+
+        return jsonify({"count": count})
+    finally:
+        db.close()
+
+
+@app.route("/api/notifications/<int:notification_id>/read", methods=["POST"])
+def api_mark_notification_read(notification_id):
+    """Mark a notification as read."""
+    token = session.get("session_token")
+    user_data = get_session(token)
+    if not user_data:
+        return jsonify({"error": "unauthorized"}), 401
+
+    db = SessionLocal()
+    try:
+        notification = db.query(Notification).filter(
+            Notification.id == notification_id,
+            Notification.user_id == user_data["user_id"]
+        ).first()
+
+        if not notification:
+            return jsonify({"error": "notification not found"}), 404
+
+        notification.is_read = True
+        db.commit()
+
+        return jsonify({"message": "Notification marked as read"})
+    finally:
+        db.close()
+
+
+@app.route("/api/notifications/<int:notification_id>/respond", methods=["POST"])
+def api_respond_to_notification(notification_id):
+    """
+    Respond to a meeting notification (accept/decline).
+
+    Request body:
+    {
+        "response": "accepted"  // or "declined"
+    }
+    """
+    token = session.get("session_token")
+    user_data = get_session(token)
+    if not user_data:
+        return jsonify({"error": "unauthorized"}), 401
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "JSON body required"}), 400
+
+    response = data.get("response")
+    if response not in ["accepted", "declined"]:
+        return jsonify({"error": "response must be 'accepted' or 'declined'"}), 400
+
+    db = SessionLocal()
+    try:
+        notification = db.query(Notification).filter(
+            Notification.id == notification_id,
+            Notification.user_id == user_data["user_id"]
+        ).first()
+
+        if not notification:
+            return jsonify({"error": "notification not found"}), 404
+
+        notification.response = response
+        notification.responded_at = datetime.now(timezone.utc)
+        notification.is_read = True
+        db.commit()
+        db.refresh(notification)
+
+        return jsonify({
+            "message": f"Meeting {response}",
+            "notification": notification.to_dict(),
         })
     finally:
         db.close()
