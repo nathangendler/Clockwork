@@ -1,0 +1,27 @@
+{
+  "id": "person_b",
+  "name": "Bob Smith",
+  "email": "bob.smith@acme.corp",
+  "timezone": "America/New_York",
+  "events": [
+    {
+      "start": 570,
+      "end": 600,
+      "timezone": "America/New_York",
+      "title": "1-on-1 with Manager",
+      "description": "Weekly check-in"
+    },
+    {
+      "start": 840,
+      "end": 870,
+      "timezone": "America/New_York",
+      "title": "Design Review",
+      "description": "Product design feedback session"
+    }
+  ],
+  "preferences": {
+    "preferred_meeting_times": ["afternoon"],
+    "avoid_back_to_back": false,
+    "min_break_minutes": 0
+  }
+}

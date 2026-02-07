@@ -1,0 +1,27 @@
+{
+  "id": "person_a",
+  "name": "Alice Johnson",
+  "email": "alice.johnson@acme.corp",
+  "timezone": "America/New_York",
+  "events": [
+    {
+      "start": 600,
+      "end": 660,
+      "timezone": "America/New_York",
+      "title": "Team Standup",
+      "description": "Daily sync with engineering team"
+    },
+    {
+      "start": 900,
+      "end": 960,
+      "timezone": "America/New_York",
+      "title": "Client Review",
+      "description": "Q4 planning with client stakeholders"
+    }
+  ],
+  "preferences": {
+    "preferred_meeting_times": ["morning"],
+    "avoid_back_to_back": true,
+    "min_break_minutes": 15
+  }
+}

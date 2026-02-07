@@ -1,0 +1,27 @@
+{
+  "id": "person_c",
+  "name": "Carol Davis",
+  "email": "carol.davis@acme.corp",
+  "timezone": "America/Los_Angeles",
+  "events": [
+    {
+      "start": 720,
+      "end": 780,
+      "timezone": "America/Los_Angeles",
+      "title": "Lunch Block",
+      "description": "Personal time"
+    },
+    {
+      "start": 960,
+      "end": 1020,
+      "timezone": "America/Los_Angeles",
+      "title": "Marketing Sync",
+      "description": "Weekly marketing alignment"
+    }
+  ],
+  "preferences": {
+    "preferred_meeting_times": ["midday"],
+    "avoid_back_to_back": true,
+    "min_break_minutes": 30
+  }
+}
