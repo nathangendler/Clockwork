@@ -1,7 +1,11 @@
+from datetime import datetime, timezone, timedelta
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from flask import Flask, redirect, request, session, render_template, jsonify
 from flask_cors import CORS
-from dotenv import load_dotenv
 
 from auth import (
     get_authorization_url,
@@ -12,10 +16,7 @@ from auth import (
     get_user_by_email,
     get_calendar_service_for_user,
 )
-from db import init_db, SessionLocal, User, Meeting, MeetingInvite
-from datetime import datetime, timezone, timedelta
-
-load_dotenv()
+from db import init_db, SessionLocal, User, MeetingProposal, MeetingInvite
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key-change-in-prod")
@@ -260,6 +261,8 @@ def api_create_meeting():
         "duration_minutes": 30,
         "urgency": "normal",  // low, normal, high, urgent
         "location": "Conference Room A",
+        "window_start": "2024-01-01T09:00:00Z",
+        "window_end": "2024-01-05T17:00:00Z",
         "invited_emails": ["alice@example.com", "bob@example.com"]
     }
     """
@@ -287,18 +290,20 @@ def api_create_meeting():
 
     db = SessionLocal()
     try:
-        # Create the meeting
-        meeting = Meeting(
+        # Create the meeting proposal
+        proposal = MeetingProposal(
             organizer_id=user_data["user_id"],
             title=title,
             description=data.get("description"),
             duration_minutes=duration_minutes,
             urgency=data.get("urgency", "normal"),
             location=data.get("location"),
+            window_start=data.get("window_start"),
+            window_end=data.get("window_end"),
             status="pending",
         )
-        db.add(meeting)
-        db.flush()  # Get the meeting ID
+        db.add(proposal)
+        db.flush()  # Get the proposal ID
 
         # Create invites for each invited user
         not_found = []
@@ -309,7 +314,7 @@ def api_create_meeting():
                 continue
 
             invite = MeetingInvite(
-                meeting_id=meeting.id,
+                proposal_id=proposal.id,
                 user_id=user.id,
                 is_required=True,
                 status="pending",
@@ -317,11 +322,11 @@ def api_create_meeting():
             db.add(invite)
 
         db.commit()
-        db.refresh(meeting)
+        db.refresh(proposal)
 
         response = {
-            "meeting": meeting.to_dict(),
-            "message": "Meeting created successfully",
+            "proposal": proposal.to_dict(),
+            "message": "Meeting proposal created successfully",
         }
         if not_found:
             response["warning"] = f"Users not found: {not_found}"
@@ -333,7 +338,7 @@ def api_create_meeting():
 
 @app.route("/api/meetings", methods=["GET"])
 def api_get_my_meetings():
-    """Get meetings organized by the current user."""
+    """Get meeting proposals organized by the current user."""
     token = session.get("session_token")
     user_data = get_session(token)
     if not user_data:
@@ -341,18 +346,18 @@ def api_get_my_meetings():
 
     db = SessionLocal()
     try:
-        meetings = db.query(Meeting).filter(
-            Meeting.organizer_id == user_data["user_id"]
-        ).order_by(Meeting.created_at.desc()).all()
+        proposals = db.query(MeetingProposal).filter(
+            MeetingProposal.organizer_id == user_data["user_id"]
+        ).order_by(MeetingProposal.created_at.desc()).all()
 
-        return jsonify([m.to_dict() for m in meetings])
+        return jsonify([p.to_dict() for p in proposals])
     finally:
         db.close()
 
 
 @app.route("/api/meetings/<int:meeting_id>", methods=["GET"])
 def api_get_meeting(meeting_id):
-    """Get a specific meeting by ID."""
+    """Get a specific meeting proposal by ID."""
     token = session.get("session_token")
     user_data = get_session(token)
     if not user_data:
@@ -360,11 +365,11 @@ def api_get_meeting(meeting_id):
 
     db = SessionLocal()
     try:
-        meeting = db.query(Meeting).filter(Meeting.id == meeting_id).first()
-        if not meeting:
-            return jsonify({"error": "meeting not found"}), 404
+        proposal = db.query(MeetingProposal).filter(MeetingProposal.id == meeting_id).first()
+        if not proposal:
+            return jsonify({"error": "proposal not found"}), 404
 
-        return jsonify(meeting.to_dict())
+        return jsonify(proposal.to_dict())
     finally:
         db.close()
 
@@ -399,7 +404,7 @@ def api_get_my_invites():
         result = []
         for invite in invites:
             invite_data = invite.to_dict()
-            invite_data["meeting"] = invite.meeting.to_dict(include_invites=False)
+            invite_data["proposal"] = invite.proposal.to_dict(include_invites=False)
             result.append(invite_data)
 
         return jsonify(result)

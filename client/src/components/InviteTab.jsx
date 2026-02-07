@@ -10,6 +10,7 @@ export default function InviteTab() {
   const [locationType, setLocationType] = useState('online');
   const [onlinePlatform, setOnlinePlatform] = useState('');
   const [inPersonLocation, setInPersonLocation] = useState('');
+  const [urgency, setUrgency] = useState('normal');
   const [windowStart, setWindowStart] = useState('');
   const [windowEnd, setWindowEnd] = useState('');
   const [status, setStatus] = useState(null);
@@ -46,6 +47,7 @@ export default function InviteTab() {
         start: windowStart,
         end: windowEnd,
         attendees: selected.map(c => c.email),
+        urgency,
       }),
     })
       .then(res => res.json())
@@ -59,6 +61,7 @@ export default function InviteTab() {
           setLocationType('online');
           setOnlinePlatform('');
           setInPersonLocation('');
+          setUrgency('normal');
           setWindowStart('');
           setWindowEnd('');
           setResults([]);
@@ -144,6 +147,33 @@ export default function InviteTab() {
               onChange={e => setDurationMinutes(e.target.value)}
               className="form-input"
             />
+            <label className="form-label">Urgency</label>
+            <div className="urgency-toggle">
+              <button
+                type="button"
+                className={`urgency-button ${urgency === 'low' ? 'active' : ''}`}
+                onClick={() => setUrgency('low')}
+                aria-pressed={urgency === 'low'}
+              >
+                Low
+              </button>
+              <button
+                type="button"
+                className={`urgency-button ${urgency === 'normal' ? 'active' : ''}`}
+                onClick={() => setUrgency('normal')}
+                aria-pressed={urgency === 'normal'}
+              >
+                Normal
+              </button>
+              <button
+                type="button"
+                className={`urgency-button ${urgency === 'high' ? 'active' : ''}`}
+                onClick={() => setUrgency('high')}
+                aria-pressed={urgency === 'high'}
+              >
+                High
+              </button>
+            </div>
             <label className="form-label">Location</label>
             <div className="location-toggle">
               <label className="radio-pill">

@@ -19,8 +19,9 @@ class User(Base):
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     sessions = relationship("Session", back_populates="user", cascade="all, delete-orphan")
-    organized_meetings = relationship("Meeting", back_populates="organizer", cascade="all, delete-orphan")
-    invites = relationship("MeetingInvite", back_populates="user", cascade="all, delete-orphan")
+    organized_proposals = relationship("MeetingProposal", back_populates="organizer", cascade="all, delete-orphan")
+    confirmed_meetings = relationship("ConfirmedMeeting", back_populates="organizer", cascade="all, delete-orphan")
+    proposal_invites = relationship("MeetingInvite", back_populates="user", cascade="all, delete-orphan")
 
     def to_dict(self):
         return {
@@ -44,17 +45,17 @@ class Session(Base):
     user = relationship("User", back_populates="sessions")
 
 
-class Meeting(Base):
+class MeetingProposal(Base):
     """
-    Meeting requests created by users.
+    Meeting proposals created by users.
 
     Flow:
-    1. User creates meeting with title, duration, urgency, location, invited members
+    1. User creates proposal with title, duration, urgency, location, invited members, windows
     2. Algorithm optimizes to find best time (status: optimizing)
-    3. Once optimized, invites are sent (status: scheduled)
-    4. Meeting completes or is cancelled
+    3. Proposal is confirmed into a scheduled meeting
+    4. Proposal is completed or cancelled
     """
-    __tablename__ = "meetings"
+    __tablename__ = "meeting_proposals"
 
     id = Column(Integer, primary_key=True)
     organizer_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
@@ -66,19 +67,24 @@ class Meeting(Base):
     urgency = Column(String(20), nullable=False, default="normal")  # low, normal, high, urgent
     location = Column(String(255))  # physical location or 'virtual'
 
-    # Optimized result (set by algorithm)
-    scheduled_start = Column(DateTime(timezone=True))
-    scheduled_end = Column(DateTime(timezone=True))
-    final_location = Column(String(255))
+    # Scheduling windows (input by user)
+    window_start = Column(DateTime(timezone=True))
+    window_end = Column(DateTime(timezone=True))
 
     # Status tracking
-    status = Column(String(50), default="pending")  # pending, optimizing, scheduled, completed, cancelled
+    status = Column(String(50), default="pending")  # pending, optimizing, confirmed, cancelled
 
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
-    organizer = relationship("User", back_populates="organized_meetings")
-    invites = relationship("MeetingInvite", back_populates="meeting", cascade="all, delete-orphan")
+    organizer = relationship("User", back_populates="organized_proposals")
+    invites = relationship("MeetingInvite", back_populates="proposal", cascade="all, delete-orphan")
+    confirmed_meeting = relationship(
+        "ConfirmedMeeting",
+        back_populates="proposal",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
 
     def to_dict(self, include_invites=True):
         data = {
@@ -90,20 +96,71 @@ class Meeting(Base):
             "duration_minutes": self.duration_minutes,
             "urgency": self.urgency,
             "location": self.location,
-            "scheduled_start": self.scheduled_start.isoformat() if self.scheduled_start else None,
-            "scheduled_end": self.scheduled_end.isoformat() if self.scheduled_end else None,
-            "final_location": self.final_location,
+            "window_start": self.window_start.isoformat() if self.window_start else None,
+            "window_end": self.window_end.isoformat() if self.window_end else None,
             "status": self.status,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
         if include_invites:
             data["invites"] = [inv.to_dict() for inv in self.invites]
+        if self.confirmed_meeting:
+            data["confirmed_meeting"] = self.confirmed_meeting.to_dict()
         return data
+
+
+class ConfirmedMeeting(Base):
+    """
+    Confirmed meetings derived from proposals.
+    Windows are replaced with concrete start/end times.
+    """
+    __tablename__ = "confirmed_meetings"
+
+    id = Column(Integer, primary_key=True)
+    proposal_id = Column(Integer, ForeignKey("meeting_proposals.id", ondelete="CASCADE"), unique=True)
+    organizer_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+
+    # Meeting details (copied from proposal at confirmation time)
+    title = Column(String(255), nullable=False)
+    description = Column(Text)
+    duration_minutes = Column(Integer, nullable=False)
+    urgency = Column(String(20), nullable=False, default="normal")  # low, normal, high, urgent
+    location = Column(String(255))  # physical location or 'virtual'
+
+    # Confirmed schedule
+    start_time = Column(DateTime(timezone=True), nullable=False)
+    end_time = Column(DateTime(timezone=True), nullable=False)
+    final_location = Column(String(255))
+
+    # Status tracking
+    status = Column(String(50), default="scheduled")  # scheduled, completed, cancelled
+
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    organizer = relationship("User", back_populates="confirmed_meetings")
+    proposal = relationship("MeetingProposal", back_populates="confirmed_meeting")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "proposal_id": self.proposal_id,
+            "organizer_id": self.organizer_id,
+            "title": self.title,
+            "description": self.description,
+            "duration_minutes": self.duration_minutes,
+            "urgency": self.urgency,
+            "location": self.location,
+            "start_time": self.start_time.isoformat() if self.start_time else None,
+            "end_time": self.end_time.isoformat() if self.end_time else None,
+            "final_location": self.final_location,
+            "status": self.status,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
 
 
 class MeetingInvite(Base):
     """
-    Meeting invites for each user.
+    Meeting proposal invites for each user.
 
     When a user opens the Chrome extension, they see all their pending invites
     and can accept or decline them.
@@ -111,7 +168,7 @@ class MeetingInvite(Base):
     __tablename__ = "meeting_invites"
 
     id = Column(Integer, primary_key=True)
-    meeting_id = Column(Integer, ForeignKey("meetings.id", ondelete="CASCADE"))
+    proposal_id = Column(Integer, ForeignKey("meeting_proposals.id", ondelete="CASCADE"))
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
 
     # Invite status
@@ -122,13 +179,13 @@ class MeetingInvite(Base):
     invited_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     responded_at = Column(DateTime(timezone=True))
 
-    meeting = relationship("Meeting", back_populates="invites")
-    user = relationship("User", back_populates="invites")
+    proposal = relationship("MeetingProposal", back_populates="invites")
+    user = relationship("User", back_populates="proposal_invites")
 
     def to_dict(self):
         return {
             "id": self.id,
-            "meeting_id": self.meeting_id,
+            "proposal_id": self.proposal_id,
             "user_id": self.user_id,
             "email": self.user.email if self.user else None,
             "name": self.user.name if self.user else None,

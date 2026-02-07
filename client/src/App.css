@@ -278,6 +278,10 @@
   display: flex;
   gap: 10px;
 }
+.urgency-toggle {
+  display: flex;
+  gap: 10px;
+}
 .radio-pill {
   display: inline-flex;
   align-items: center;
@@ -292,6 +296,25 @@
 }
 .radio-pill input {
   accent-color: #4285f4;
+}
+.urgency-button {
+  padding: 8px 14px;
+  border: 1px solid #dadce0;
+  border-radius: 999px;
+  background: #fff;
+  color: #374151;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+.urgency-button:hover {
+  border-color: #b7c1d1;
+}
+.urgency-button.active {
+  border-color: #4285f4;
+  background: #e8f0fe;
+  color: #1a73e8;
 }
 .window-grid {
   display: grid;

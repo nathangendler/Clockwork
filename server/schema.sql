@@ -32,11 +32,11 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 
 -- ============================================
--- MEETINGS TABLE
--- Stores meeting requests created by users
--- Status flow: pending → optimizing → scheduled → completed/cancelled
+-- MEETING PROPOSALS TABLE
+-- Stores meeting proposals created by users
+-- Status flow: pending → optimizing → confirmed/cancelled
 -- ============================================
-CREATE TABLE IF NOT EXISTS meetings (
+CREATE TABLE IF NOT EXISTS meeting_proposals (
     id SERIAL PRIMARY KEY,
     organizer_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
 
@@ -47,13 +47,40 @@ CREATE TABLE IF NOT EXISTS meetings (
     urgency VARCHAR(20) NOT NULL DEFAULT 'normal',  -- low, normal, high, urgent
     location VARCHAR(255),  -- physical location or 'virtual'
 
-    -- Optimized result (set by algorithm)
-    scheduled_start TIMESTAMP WITH TIME ZONE,
-    scheduled_end TIMESTAMP WITH TIME ZONE,
+    -- Scheduling windows (input by user)
+    window_start TIMESTAMP WITH TIME ZONE,
+    window_end TIMESTAMP WITH TIME ZONE,
+
+    -- Status tracking
+    status VARCHAR(50) DEFAULT 'pending',  -- pending, optimizing, confirmed, cancelled
+
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ============================================
+-- CONFIRMED MEETINGS TABLE
+-- Stores confirmed meetings derived from proposals
+-- ============================================
+CREATE TABLE IF NOT EXISTS confirmed_meetings (
+    id SERIAL PRIMARY KEY,
+    proposal_id INTEGER UNIQUE REFERENCES meeting_proposals(id) ON DELETE CASCADE,
+    organizer_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+
+    -- Meeting details (copied from proposal at confirmation time)
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    duration_minutes INTEGER NOT NULL,
+    urgency VARCHAR(20) NOT NULL DEFAULT 'normal',  -- low, normal, high, urgent
+    location VARCHAR(255),  -- physical location or 'virtual'
+
+    -- Confirmed schedule
+    start_time TIMESTAMP WITH TIME ZONE NOT NULL,
+    end_time TIMESTAMP WITH TIME ZONE NOT NULL,
     final_location VARCHAR(255),
 
     -- Status tracking
-    status VARCHAR(50) DEFAULT 'pending',  -- pending, optimizing, scheduled, completed, cancelled
+    status VARCHAR(50) DEFAULT 'scheduled',  -- scheduled, completed, cancelled
 
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -66,7 +93,7 @@ CREATE TABLE IF NOT EXISTS meetings (
 -- ============================================
 CREATE TABLE IF NOT EXISTS meeting_invites (
     id SERIAL PRIMARY KEY,
-    meeting_id INTEGER REFERENCES meetings(id) ON DELETE CASCADE,
+    proposal_id INTEGER REFERENCES meeting_proposals(id) ON DELETE CASCADE,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
 
     -- Invite status
@@ -77,7 +104,7 @@ CREATE TABLE IF NOT EXISTS meeting_invites (
     invited_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     responded_at TIMESTAMP WITH TIME ZONE,
 
-    UNIQUE(meeting_id, user_id)
+    UNIQUE(proposal_id, user_id)
 );
 
 -- ============================================
@@ -86,8 +113,10 @@ CREATE TABLE IF NOT EXISTS meeting_invites (
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(session_token);
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
-CREATE INDEX IF NOT EXISTS idx_meetings_organizer ON meetings(organizer_id);
-CREATE INDEX IF NOT EXISTS idx_meetings_status ON meetings(status);
-CREATE INDEX IF NOT EXISTS idx_invites_meeting ON meeting_invites(meeting_id);
+CREATE INDEX IF NOT EXISTS idx_meeting_proposals_organizer ON meeting_proposals(organizer_id);
+CREATE INDEX IF NOT EXISTS idx_meeting_proposals_status ON meeting_proposals(status);
+CREATE INDEX IF NOT EXISTS idx_confirmed_meetings_organizer ON confirmed_meetings(organizer_id);
+CREATE INDEX IF NOT EXISTS idx_confirmed_meetings_status ON confirmed_meetings(status);
+CREATE INDEX IF NOT EXISTS idx_invites_proposal ON meeting_invites(proposal_id);
 CREATE INDEX IF NOT EXISTS idx_invites_user ON meeting_invites(user_id);
 CREATE INDEX IF NOT EXISTS idx_invites_status ON meeting_invites(status);
