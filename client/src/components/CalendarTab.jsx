@@ -7,12 +7,18 @@ export default function CalendarTab({ token }) {
   useEffect(() => {
     if (!token) return;
 
-    fetch("http://localhost:8080/api/events", {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    const fetchOptions = token === "session"
+      ? { credentials: "include" }
+      : { headers: { Authorization: `Bearer ${token}` } };
+
+    fetch("http://localhost:8080/api/events", fetchOptions)
       .then((res) => res.json())
       .then((data) => {
-        setEvents(data);
+        if (Array.isArray(data)) {
+          setEvents(data);
+        } else {
+          setEvents([]);
+        }
         setLoading(false);
       })
       .catch(() => setLoading(false));

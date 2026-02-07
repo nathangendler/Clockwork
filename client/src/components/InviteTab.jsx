@@ -21,15 +21,21 @@ export default function InviteTab({ token }) {
     if (!query.trim()) return;
     setSearching(true);
 
+    const fetchOptions = token === "session"
+      ? { credentials: "include" }
+      : { headers: { Authorization: `Bearer ${token}` } };
+
     fetch(
       `http://localhost:8080/api/contacts/search?q=${encodeURIComponent(query)}`,
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      },
+      fetchOptions,
     )
       .then((res) => res.json())
       .then((data) => {
-        setResults(data);
+        if (Array.isArray(data)) {
+          setResults(data);
+        } else {
+          setResults([]);
+        }
         setSearching(false);
       })
       .catch(() => setSearching(false));
@@ -47,7 +53,7 @@ export default function InviteTab({ token }) {
     e.preventDefault();
     if (!windowStart || !windowEnd || selected.length === 0) return;
     setStatus('creating');
-    fetch('/api/events/create', {
+    fetch('http://localhost:8080/api/events/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
