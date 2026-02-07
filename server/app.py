@@ -2,7 +2,8 @@ import os
 from flask import Flask, redirect, request, session, render_template, url_for
 from dotenv import load_dotenv
 
-from auth import get_authorization_url, handle_callback, get_session
+from auth import get_authorization_url, handle_callback, get_session, get_calendar_service
+from datetime import datetime, timezone
 
 load_dotenv()
 
@@ -16,7 +17,19 @@ def index():
     if token:
         user = get_session(token)
         if user:
-            return render_template("home.html", email=user["email"])
+            service = get_calendar_service(token)
+            events = []
+            if service:
+                now = datetime.now(timezone.utc).isoformat()
+                result = service.events().list(
+                    calendarId="primary",
+                    timeMin=now,
+                    maxResults=20,
+                    singleEvents=True,
+                    orderBy="startTime",
+                ).execute()
+                events = result.get("items", [])
+            return render_template("home.html", email=user["email"], events=events)
     return render_template("login.html")
 
 
