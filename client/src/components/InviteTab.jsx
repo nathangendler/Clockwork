@@ -1,12 +1,12 @@
-import { useState } from 'react';
+import { useState } from "react";
 
-export default function InviteTab() {
-  const [query, setQuery] = useState('');
+export default function InviteTab({ token }) {
+  const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [selected, setSelected] = useState([]);
-  const [summary, setSummary] = useState('');
-  const [start, setStart] = useState('');
-  const [end, setEnd] = useState('');
+  const [summary, setSummary] = useState("");
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
   const [status, setStatus] = useState(null);
   const [searching, setSearching] = useState(false);
 
@@ -14,16 +14,25 @@ export default function InviteTab() {
     e.preventDefault();
     if (!query.trim()) return;
     setSearching(true);
-    fetch(`/api/contacts/search?q=${encodeURIComponent(query)}`, { credentials: 'include' })
-      .then(res => res.json())
-      .then(data => { setResults(data); setSearching(false); })
+
+    fetch(
+      `http://localhost:8080/api/contacts/search?q=${encodeURIComponent(query)}`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      },
+    )
+      .then((res) => res.json())
+      .then((data) => {
+        setResults(data);
+        setSearching(false);
+      })
       .catch(() => setSearching(false));
   }
 
   function toggleSelect(contact) {
-    setSelected(prev => {
-      const exists = prev.find(c => c.email === contact.email);
-      if (exists) return prev.filter(c => c.email !== contact.email);
+    setSelected((prev) => {
+      const exists = prev.find((c) => c.email === contact.email);
+      if (exists) return prev.filter((c) => c.email !== contact.email);
       return [...prev, contact];
     });
   }
@@ -31,33 +40,36 @@ export default function InviteTab() {
   function handleCreate(e) {
     e.preventDefault();
     if (!start || !end || selected.length === 0) return;
-    setStatus('creating');
-    fetch('/api/events/create', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
+    setStatus("creating");
+
+    fetch("http://localhost:8080/api/events/create", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
       body: JSON.stringify({
-        summary: summary || 'Meeting',
+        summary: summary || "Meeting",
         start,
         end,
-        attendees: selected.map(c => c.email),
+        attendees: selected.map((c) => c.email),
       }),
     })
-      .then(res => res.json())
-      .then(data => {
+      .then((res) => res.json())
+      .then((data) => {
         if (data.id) {
-          setStatus('success');
+          setStatus("success");
           setSelected([]);
-          setSummary('');
-          setStart('');
-          setEnd('');
+          setSummary("");
+          setStart("");
+          setEnd("");
           setResults([]);
-          setQuery('');
+          setQuery("");
         } else {
-          setStatus('error');
+          setStatus("error");
         }
       })
-      .catch(() => setStatus('error'));
+      .catch(() => setStatus("error"));
   }
 
   return (
@@ -68,26 +80,28 @@ export default function InviteTab() {
           type="text"
           placeholder="Search contacts..."
           value={query}
-          onChange={e => setQuery(e.target.value)}
+          onChange={(e) => setQuery(e.target.value)}
           className="search-input"
         />
         <button type="submit" className="btn-search" disabled={searching}>
-          {searching ? 'Searching...' : 'Search'}
+          {searching ? "Searching..." : "Search"}
         </button>
       </form>
 
       {/* Search results */}
       {results.length > 0 && (
         <div className="contact-results">
-          {results.map(contact => {
-            const isSelected = selected.some(c => c.email === contact.email);
+          {results.map((contact) => {
+            const isSelected = selected.some((c) => c.email === contact.email);
             return (
               <div
                 key={contact.email}
-                className={`contact-card ${isSelected ? 'selected' : ''}`}
+                className={`contact-card ${isSelected ? "selected" : ""}`}
                 onClick={() => toggleSelect(contact)}
               >
-                <div className="contact-name">{contact.name || contact.email}</div>
+                <div className="contact-name">
+                  {contact.name || contact.email}
+                </div>
                 <div className="contact-email">{contact.email}</div>
               </div>
             );
@@ -100,8 +114,12 @@ export default function InviteTab() {
         <div className="selected-section">
           <h3>Inviting ({selected.length})</h3>
           <div className="selected-chips">
-            {selected.map(c => (
-              <span key={c.email} className="chip" onClick={() => toggleSelect(c)}>
+            {selected.map((c) => (
+              <span
+                key={c.email}
+                className="chip"
+                onClick={() => toggleSelect(c)}
+              >
                 {c.name || c.email} &times;
               </span>
             ))}
@@ -113,14 +131,14 @@ export default function InviteTab() {
               type="text"
               placeholder="Meeting title"
               value={summary}
-              onChange={e => setSummary(e.target.value)}
+              onChange={(e) => setSummary(e.target.value)}
               className="form-input"
             />
             <label className="form-label">Start</label>
             <input
               type="datetime-local"
               value={start}
-              onChange={e => setStart(e.target.value)}
+              onChange={(e) => setStart(e.target.value)}
               className="form-input"
               required
             />
@@ -128,17 +146,25 @@ export default function InviteTab() {
             <input
               type="datetime-local"
               value={end}
-              onChange={e => setEnd(e.target.value)}
+              onChange={(e) => setEnd(e.target.value)}
               className="form-input"
               required
             />
-            <button type="submit" className="btn-create" disabled={status === 'creating'}>
-              {status === 'creating' ? 'Creating...' : 'Create Meeting'}
+            <button
+              type="submit"
+              className="btn-create"
+              disabled={status === "creating"}
+            >
+              {status === "creating" ? "Creating..." : "Create Meeting"}
             </button>
           </form>
 
-          {status === 'success' && <p className="success-msg">Meeting created and invites sent!</p>}
-          {status === 'error' && <p className="error-msg">Failed to create meeting. Try again.</p>}
+          {status === "success" && (
+            <p className="success-msg">Meeting created and invites sent!</p>
+          )}
+          {status === "error" && (
+            <p className="error-msg">Failed to create meeting. Try again.</p>
+          )}
         </div>
       )}
     </div>
