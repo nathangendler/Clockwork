@@ -46,6 +46,8 @@ export default function InviteTab() {
         summary: summary || 'Meeting',
         start: windowStart,
         end: windowEnd,
+        durationMinutes: parseInt(durationMinutes, 10) || 60,
+        locationType: locationType === 'in-person' ? 'in-person' : 'virtual',
         attendees: selected.map(c => c.email),
         urgency,
       }),
