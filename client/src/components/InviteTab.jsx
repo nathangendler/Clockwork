@@ -4,9 +4,15 @@ export default function InviteTab({ token }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [selected, setSelected] = useState([]);
-  const [summary, setSummary] = useState("");
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
+  const [summary, setSummary] = useState('');
+  const [description, setDescription] = useState('');
+  const [durationMinutes, setDurationMinutes] = useState('');
+  const [locationType, setLocationType] = useState('online');
+  const [onlinePlatform, setOnlinePlatform] = useState('');
+  const [inPersonLocation, setInPersonLocation] = useState('');
+  const [urgency, setUrgency] = useState('normal');
+  const [windowStart, setWindowStart] = useState('');
+  const [windowEnd, setWindowEnd] = useState('');
   const [status, setStatus] = useState(null);
   const [searching, setSearching] = useState(false);
 
@@ -39,20 +45,20 @@ export default function InviteTab({ token }) {
 
   function handleCreate(e) {
     e.preventDefault();
-    if (!start || !end || selected.length === 0) return;
-    setStatus("creating");
-
-    fetch("http://localhost:8080/api/events/create", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
+    if (!windowStart || !windowEnd || selected.length === 0) return;
+    setStatus('creating');
+    fetch('/api/events/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({
-        summary: summary || "Meeting",
-        start,
-        end,
-        attendees: selected.map((c) => c.email),
+        summary: summary || 'Meeting',
+        start: windowStart,
+        end: windowEnd,
+        durationMinutes: parseInt(durationMinutes, 10) || 60,
+        locationType: locationType === 'in-person' ? 'in-person' : 'virtual',
+        attendees: selected.map(c => c.email),
+        urgency,
       }),
     })
       .then((res) => res.json())
@@ -60,9 +66,15 @@ export default function InviteTab({ token }) {
         if (data.id) {
           setStatus("success");
           setSelected([]);
-          setSummary("");
-          setStart("");
-          setEnd("");
+          setSummary('');
+          setDescription('');
+          setDurationMinutes('');
+          setLocationType('online');
+          setOnlinePlatform('');
+          setInPersonLocation('');
+          setUrgency('normal');
+          setWindowStart('');
+          setWindowEnd('');
           setResults([]);
           setQuery("");
         } else {
@@ -134,28 +146,116 @@ export default function InviteTab({ token }) {
               onChange={(e) => setSummary(e.target.value)}
               className="form-input"
             />
-            <label className="form-label">Start</label>
-            <input
-              type="datetime-local"
-              value={start}
-              onChange={(e) => setStart(e.target.value)}
-              className="form-input"
-              required
+            <label className="form-label">Description</label>
+            <textarea
+              placeholder="Add details for attendees"
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              className="form-textarea"
+              rows={3}
             />
-            <label className="form-label">End</label>
+            <label className="form-label">Duration (minutes)</label>
             <input
-              type="datetime-local"
-              value={end}
-              onChange={(e) => setEnd(e.target.value)}
+              type="number"
+              min="1"
+              step="1"
+              placeholder="30"
+              value={durationMinutes}
+              onChange={e => setDurationMinutes(e.target.value)}
               className="form-input"
-              required
             />
-            <button
-              type="submit"
-              className="btn-create"
-              disabled={status === "creating"}
-            >
-              {status === "creating" ? "Creating..." : "Create Meeting"}
+            <label className="form-label">Urgency</label>
+            <div className="urgency-toggle">
+              <button
+                type="button"
+                className={`urgency-button ${urgency === 'low' ? 'active' : ''}`}
+                onClick={() => setUrgency('low')}
+                aria-pressed={urgency === 'low'}
+              >
+                Low
+              </button>
+              <button
+                type="button"
+                className={`urgency-button ${urgency === 'normal' ? 'active' : ''}`}
+                onClick={() => setUrgency('normal')}
+                aria-pressed={urgency === 'normal'}
+              >
+                Normal
+              </button>
+              <button
+                type="button"
+                className={`urgency-button ${urgency === 'high' ? 'active' : ''}`}
+                onClick={() => setUrgency('high')}
+                aria-pressed={urgency === 'high'}
+              >
+                High
+              </button>
+            </div>
+            <label className="form-label">Location</label>
+            <div className="location-toggle">
+              <label className="radio-pill">
+                <input
+                  type="radio"
+                  name="locationType"
+                  value="online"
+                  checked={locationType === 'online'}
+                  onChange={() => setLocationType('online')}
+                />
+                <span>Online</span>
+              </label>
+              <label className="radio-pill">
+                <input
+                  type="radio"
+                  name="locationType"
+                  value="in-person"
+                  checked={locationType === 'in-person'}
+                  onChange={() => setLocationType('in-person')}
+                />
+                <span>In person</span>
+              </label>
+            </div>
+            {locationType === 'online' ? (
+              <input
+                type="text"
+                placeholder="Platform (Zoom, Google Meet, Teams)"
+                value={onlinePlatform}
+                onChange={e => setOnlinePlatform(e.target.value)}
+                className="form-input"
+              />
+            ) : (
+              <input
+                type="text"
+                placeholder="Location (building, room)"
+                value={inPersonLocation}
+                onChange={e => setInPersonLocation(e.target.value)}
+                className="form-input"
+              />
+            )}
+            <label className="form-label">Window</label>
+            <div className="window-grid">
+              <div>
+                <label className="form-sub-label">Earliest</label>
+                <input
+                  type="datetime-local"
+                  value={windowStart}
+                  onChange={e => setWindowStart(e.target.value)}
+                  className="form-input"
+                  required
+                />
+              </div>
+              <div>
+                <label className="form-sub-label">Latest</label>
+                <input
+                  type="datetime-local"
+                  value={windowEnd}
+                  onChange={e => setWindowEnd(e.target.value)}
+                  className="form-input"
+                  required
+                />
+              </div>
+            </div>
+            <button type="submit" className="btn-create" disabled={status === 'creating'}>
+              {status === 'creating' ? 'Creating...' : 'Create Meeting'}
             </button>
           </form>
 

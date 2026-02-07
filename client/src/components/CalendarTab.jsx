@@ -29,27 +29,42 @@ export default function CalendarTab({ token }) {
   return (
     <div>
       {events.map((event) => {
-        const start = event.start || {};
-        const startDt = start.dateTime || start.date || "";
+        const startDt = event.start_time || '';
+        const endDt = event.end_time || '';
         const datePart = startDt.slice(0, 10);
         const showDateHeader = datePart !== currentDate;
         if (showDateHeader) currentDate = datePart;
+
+        const startTime = startDt.slice(11, 16);
+        const endTime = endDt.slice(11, 16);
 
         return (
           <div key={event.id}>
             {showDateHeader && <div className="date-header">{datePart}</div>}
             <div className="event-card">
               <div className="event-time">
-                {start.dateTime ? startDt.slice(11, 16) : "All day"}
+                {startTime} – {endTime}
               </div>
               <div className="event-details">
-                <div className="event-title">
-                  {event.summary || "(No title)"}
-                </div>
-                {event.location && (
-                  <div className="event-location">{event.location}</div>
+                <div className="event-title">{event.title || '(No title)'}</div>
+                <div className="event-meta">{event.duration_minutes} min · {event.urgency}</div>
+                {event.description && <div className="event-description">{event.description}</div>}
+                {event.location && <div className="event-location">{event.location}</div>}
+                {event.invites && event.invites.length > 0 && (
+                  <div className="event-attendees">
+                    {event.invites.map(inv => (
+                      <span key={inv.id} className="attendee-chip">{inv.name || inv.email}</span>
+                    ))}
+                  </div>
                 )}
               </div>
+              <button
+                className="btn-delete"
+                onClick={() => handleDelete(event.id)}
+                title="Delete meeting"
+              >
+                X
+              </button>
             </div>
           </div>
         );

@@ -1,0 +1,72 @@
+{
+  "organization": {
+    "name": "Columbia",
+    "default_timezone": "America/New_York"
+  },
+  "work_hours": {
+    "start": 540,
+    "end": 1020,
+    "start_formatted": "09:00",
+    "end_formatted": "17:00",
+    "description": "Standard 9am-5pm workday"
+  },
+  "lunch_window": {
+    "start": 720,
+    "end": 780,
+    "start_formatted": "12:00",
+    "end_formatted": "13:00",
+    "description": "Lunch break - meetings discouraged"
+  },
+  "meeting_preferences": {
+    "default_duration": 60,
+    "interval_minutes": 15,
+    "min_buffer_before_work_end": 60,
+    "min_buffer_after_work_start": 60,
+    "preferred_times": [
+      {
+        "start": 600,
+        "end": 660,
+        "label": "Mid-morning"
+      },
+      {
+        "start": 840,
+        "end": 900,
+        "label": "Mid-afternoon"
+      }
+    ]
+  },
+  "penalties": {
+    "outside_work_hours": 50,
+    "overlaps_lunch": 30,
+    "early_morning": 15,
+    "late_evening": 15,
+    "weekend": 40,
+    "friday_afternoon": 5,
+    "no_morning_buffer": 10,
+    "no_evening_buffer": 10,
+    "per_additional_timezone": 5
+  },
+  "bonuses": {
+    "optimal_time_slot": 10,
+    "monday_morning": 5,
+    "virtual_meeting": 5,
+    "in_person_midday": 5
+  },
+  "location_types": {
+    "allowed": [
+      "virtual",
+      "in-person",
+      "hybrid"
+    ],
+    "default": "virtual"
+  },
+  "working_days": {
+    "monday": true,
+    "tuesday": true,
+    "wednesday": true,
+    "thursday": true,
+    "friday": true,
+    "saturday": false,
+    "sunday": false
+  }
+}
