@@ -20,10 +20,10 @@ engine = create_engine(
     DATABASE_URL,
     connect_args={"sslmode": "require"},
     pool_pre_ping=True,
-    pool_size=2,           # Keep only 2 connections in pool
-    max_overflow=3,        # Allow 3 extra connections when busy
-    pool_recycle=300,      # Recycle connections after 5 minutes
-    pool_timeout=30,       # Wait 30 seconds for a connection
+    pool_size=2, # Keep only 2 connections in pool
+    max_overflow=3, # Allow 3 extra connections when busy
+    pool_recycle=300, # Recycle connections after 5 minutes
+    pool_timeout=30, # Wait 30 seconds for a connection
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

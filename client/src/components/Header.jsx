@@ -1,17 +1,36 @@
+import NotificationDropdown from "./NotificationDropdown";
+import Logo from "../assets/Logo.png";
 
-import NotificationDropdown from './NotificationDropdown';
+function LogoIcon() {
+  return (
+    <img
+      src={Logo}
+      alt="Logo"
+      width={28}
+      height={28}
+      style={{ display: "block" }}
+    />
+  );
+}
 
 export default function Header({ email, onLogout }) {
   return (
-    <div className="header">
-      <h1>Clockwork</h1>
-      <div className="header-right">
-        <NotificationDropdown />
-        <span className="email">{email}</span>
-        <button className="btn-logout" onClick={onLogout}>
-          Sign Out
-        </button>
+    <header className="header">
+      <div className="header-left">
+        <div className="header-logo">
+          <LogoIcon />
+          <h1>Clockwork</h1>
+        </div>
+        <div className="header-workspace"></div>
       </div>
-    </div>
+      <div className="header-right">
+        <span className="header-email">{email}</span>
+
+        <button type="button" className="btn-signout" onClick={onLogout}>
+          Sign out
+        </button>
+        <NotificationDropdown />
+      </div>
+    </header>
   );
 }

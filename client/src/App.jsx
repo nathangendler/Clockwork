@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import Header from "./components/Header";
 import Tabs from "./components/Tabs";
 import CalendarTab from "./components/CalendarTab";
-import InviteTab from "./components/InviteTab";
 import "./App.css";
 
 function App() {
@@ -48,13 +47,14 @@ function App() {
   return (
     <div className="app">
       <Header email={email} onLogout={handleLogout} />
-      <Tabs activeTab={activeTab} onTabChange={setActiveTab} />
-      <div className="content">
-        {activeTab === "calendar" ? (
-          <CalendarTab />
-        ) : (
-          <InviteTab />
-        )}
+      <div className="app-body">
+        <Tabs activeTab={activeTab} onTabChange={setActiveTab} />
+        <main className="content">
+          <CalendarTab
+            onInviteClick={() => setActiveTab("settings")}
+            activeTab={activeTab}
+          />
+        </main>
       </div>
     </div>
   );
