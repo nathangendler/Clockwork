@@ -1448,25 +1448,27 @@ def api_respond_to_invite(invite_id):
 
 def _sync_meeting_to_calendars(confirmed_meeting, db):
     """
-    Create a Google Calendar event on the organizer's calendar with all attendees.
-    Google Calendar automatically adds the event to all attendees' calendars.
+    Create a Google Calendar event on EACH participant's calendar individually.
+    This ensures both organizer and all invitees see the event.
     Called once all invitees have accepted.
     """
     if confirmed_meeting.calendar_synced:
         print("[calendar] Already synced, skipping")
         return
 
-    # Collect all participant emails
+    # Collect all participants (organizer + invitees)
+    participants = []
     organizer = db.query(User).filter(User.id == confirmed_meeting.organizer_id).first()
-    attendee_emails = []
     if organizer:
-        attendee_emails.append(organizer.email)
+        participants.append(organizer)
+
     for inv in confirmed_meeting.invites:
         user = db.query(User).filter(User.id == inv.user_id).first()
-        if user and user.email not in attendee_emails:
-            attendee_emails.append(user.email)
+        if user and user.id != confirmed_meeting.organizer_id:
+            participants.append(user)
 
-    print(f"[calendar] Syncing meeting '{confirmed_meeting.title}' with attendees: {attendee_emails}")
+    attendee_emails = [p.email for p in participants]
+    print(f"[calendar] Syncing meeting '{confirmed_meeting.title}' to {len(participants)} calendars: {attendee_emails}")
 
     event_body = {
         "summary": confirmed_meeting.title,
@@ -1485,24 +1487,30 @@ def _sync_meeting_to_calendars(confirmed_meeting, db):
 
     print(f"[calendar] Event body: {event_body}")
 
-    # Create once on organizer's calendar — Google adds it to all attendees
-    try:
-        service = get_calendar_service_for_user(confirmed_meeting.organizer_id)
-        if service:
-            service.events().insert(
-                calendarId="primary",
-                body=event_body,
-                sendUpdates="none",
-            ).execute()
-            print(f"[calendar] Created event on organizer's calendar with {len(attendee_emails)} attendees")
-            confirmed_meeting.calendar_synced = True
-            db.commit()
-        else:
-            print(f"[calendar] No calendar service for organizer (user {confirmed_meeting.organizer_id}), skipping")
-    except Exception as e:
-        print(f"[calendar] Failed to create event: {e}")
-        import traceback
-        traceback.print_exc()
+    # Create event on each participant's calendar individually
+    success_count = 0
+    for user in participants:
+        try:
+            service = get_calendar_service_for_user(user.id)
+            if service:
+                service.events().insert(
+                    calendarId="primary",
+                    body=event_body,
+                    sendUpdates="none",
+                ).execute()
+                print(f"[calendar] Created event on {user.email}'s calendar")
+                success_count += 1
+            else:
+                print(f"[calendar] No calendar service for user {user.email} (id={user.id}), skipping")
+        except Exception as e:
+            print(f"[calendar] Failed to create event for {user.email}: {e}")
+            import traceback
+            traceback.print_exc()
+
+    if success_count > 0:
+        confirmed_meeting.calendar_synced = True
+        db.commit()
+        print(f"[calendar] Successfully synced to {success_count}/{len(participants)} calendars")
 
 
 # ============ NOTIFICATION ENDPOINTS ============

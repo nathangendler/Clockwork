@@ -3,6 +3,7 @@ import secrets
 from datetime import datetime, timezone, timedelta
 from google_auth_oauthlib.flow import Flow
 from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 
 from db import SessionLocal, User, Session
@@ -184,12 +185,16 @@ def get_user_by_email(email: str):
 
 
 def get_calendar_service_for_user(user_id: int):
-    """Get Google Calendar service for a specific user by ID."""
+    """Get Google Calendar service for a specific user by ID, with token refresh."""
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.id == user_id).first()
         if not user or not user.google_access_token:
+            print(f"[calendar-auth] No user or access token for user_id={user_id}")
             return None
+
+        # Include token expiry so the library knows when to refresh
+        expiry = user.token_expiry if user.token_expiry else None
 
         credentials = Credentials(
             token=user.google_access_token,
@@ -198,7 +203,26 @@ def get_calendar_service_for_user(user_id: int):
             client_id=_get_client_id(),
             client_secret=_get_client_secret(),
             scopes=SCOPES,
+            expiry=expiry,
         )
+
+        # Refresh if expired or about to expire
+        if credentials.expired or not credentials.valid:
+            if credentials.refresh_token:
+                print(f"[calendar-auth] Refreshing expired token for user_id={user_id}")
+                try:
+                    credentials.refresh(Request())
+                    # Save the new token back to the database
+                    user.google_access_token = credentials.token
+                    user.token_expiry = credentials.expiry
+                    db.commit()
+                    print(f"[calendar-auth] Token refreshed successfully for user_id={user_id}")
+                except Exception as e:
+                    print(f"[calendar-auth] Token refresh failed for user_id={user_id}: {e}")
+                    return None
+            else:
+                print(f"[calendar-auth] No refresh token for user_id={user_id}, cannot refresh")
+                return None
 
         return build("calendar", "v3", credentials=credentials)
     finally:
