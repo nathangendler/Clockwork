@@ -85,6 +85,7 @@ export default function NotificationDropdown() {
     if (!isoString) return '';
     const date = new Date(isoString);
     return date.toLocaleDateString('en-US', {
+      timeZone: 'America/New_York',
       weekday: 'short',
       month: 'short',
       day: 'numeric',
