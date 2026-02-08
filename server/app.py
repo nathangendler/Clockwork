@@ -524,7 +524,7 @@ def api_events_ai_create():
         return jsonify({"error": "prompt is required"}), 400
 
     # Step 1: Parse the natural language prompt with Gemini
-    from ai_scheduler import parse_meeting_request, select_best_slot
+    from ai_scheduler import parse_meeting_request, select_best_slot, filter_slots_by_preference
 
     try:
         parsed = parse_meeting_request(prompt, user_data.get("email", ""))
@@ -662,17 +662,21 @@ def api_events_ai_create():
                 "score": s.score,
             })
 
-        print(f"[ai-schedule] Candidate slots for Gemini ({len(slots_for_ai)}):")
-        for i, slot in enumerate(slots_for_ai):
+        # Filter slots by time preference (e.g., "dinner" -> 5pm-9pm only)
+        time_pref = parsed.get("time_preference", "")
+        filtered_slots = filter_slots_by_preference(slots_for_ai, time_pref, DEFAULT_TIMEZONE, title=parsed.get("title", ""))
+
+        print(f"[ai-schedule] Candidate slots for Gemini ({len(filtered_slots)}):")
+        for i, slot in enumerate(filtered_slots):
             print(f"  {i + 1}. {_format_log_time(slot['start_time'])} -> {_format_log_time(slot['end_time'])} (score: {slot['score']:.0f})")
 
         try:
-            best_index = select_best_slot(slots_for_ai, prompt, parsed)
+            best_index = select_best_slot(filtered_slots, prompt, parsed)
         except Exception as e:
             print(f"[ai-schedule] Gemini select error: {e}, falling back to top scorer")
             best_index = 0
 
-        best_slot = slots_for_ai[best_index]
+        best_slot = filtered_slots[best_index]
         start_time = datetime.fromisoformat(best_slot["start_time"])
         end_time = datetime.fromisoformat(best_slot["end_time"])
 

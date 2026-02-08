@@ -6,6 +6,73 @@ from zoneinfo import ZoneInfo
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
+# Maps time-preference keywords to (start_hour, end_hour) ranges in local time
+TIME_PREFERENCE_HOURS = {
+    "lunch": (11, 14),
+    "lunchtime": (11, 14),
+    "noon": (11, 14),
+    "midday": (11, 14),
+    "dinner": (17, 21),
+    "dinner time": (17, 21),
+    "dinnertime": (17, 21),
+    "evening": (17, 21),
+    "morning": (8, 12),
+    "coffee": (8, 11),
+    "breakfast": (7, 10),
+    "afternoon": (12, 17),
+    "late afternoon": (15, 18),
+    "early morning": (7, 10),
+    "night": (18, 22),
+}
+
+
+def get_preferred_hours(time_preference: str):
+    """
+    Given a time_preference string from Gemini parsing, return (start_hour, end_hour)
+    or None if no specific time-of-day preference is detected.
+    """
+    if not time_preference:
+        return None
+    pref_lower = time_preference.lower().strip()
+    for keyword, hours in TIME_PREFERENCE_HOURS.items():
+        if keyword in pref_lower:
+            return hours
+    return None
+
+
+def filter_slots_by_preference(slots, time_preference: str, tz_str="America/New_York", title: str = ""):
+    """
+    Filter scored slots to only include those whose start time falls within the
+    preferred hour range. Also checks the meeting title as a fallback
+    (e.g., title="Lunch" implies lunchtime even if time_preference is "Tuesday").
+    Returns all slots if no preference matches or no slots fall within the range.
+    """
+    hours = get_preferred_hours(time_preference)
+    if not hours and title:
+        hours = get_preferred_hours(title)
+    if not hours:
+        return slots
+
+    tz = ZoneInfo(tz_str)
+    start_hour, end_hour = hours
+
+    filtered = []
+    for slot in slots:
+        start_dt = slot["start_time"]
+        if isinstance(start_dt, str):
+            start_dt = datetime.fromisoformat(start_dt)
+        local_hour = start_dt.astimezone(tz).hour
+        if start_hour <= local_hour < end_hour:
+            filtered.append(slot)
+
+    if not filtered:
+        print(f"[ai-schedule] No slots matched preferred hours {start_hour}:00-{end_hour}:00, using all {len(slots)} slots")
+        return slots
+
+    print(f"[ai-schedule] Filtered to {len(filtered)}/{len(slots)} slots matching preferred hours {start_hour}:00-{end_hour}:00")
+    return filtered
+
+
 def _get_model():
     genai.configure(api_key=GEMINI_API_KEY)
     return genai.GenerativeModel("gemini-2.0-flash")
@@ -32,7 +99,7 @@ Return ONLY valid JSON with these fields:
 - "urgency": one of "low", "normal", "high". Default "normal".
 - "location_type": "in-person" or "virtual". Lunch/coffee/dinner = in-person. Meeting/sync/standup = virtual.
 - "location": specific location if mentioned, otherwise empty string
-- "time_preference": natural language time hint if any (e.g. "lunchtime", "this afternoon", "morning", "next week"). Empty string if none.
+- "time_preference": natural language time hint if any. IMPORTANT: Always include the meal or time-of-day implied by the activity. For example, "lunch on Tuesday" should be "Tuesday lunchtime", "dinner" should be "dinner time", "coffee tomorrow" should be "tomorrow morning". Combine day references with time-of-day hints. Empty string only if truly no time context exists.
 - "window_days": how many days ahead to search for availability. Default 7. If user says "this week" use 5, "today" use 1, "next week" use 14.
 
 Example input: "lunch with john smith"
