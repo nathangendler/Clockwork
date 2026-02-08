@@ -4,3 +4,4 @@ venv/
 .env
 client_secret.json
 .DS_Store
+server/client-secret.json

@@ -282,28 +282,19 @@ def api_events():
 
     db = SessionLocal()
     try:
-        # Get all meetings the user organized or was invited to
+        # Get meetings organized by the current user
         organized = db.query(ConfirmedMeeting).filter(
             ConfirmedMeeting.organizer_id == user_data["user_id"],
         ).all()
 
-        invited = db.query(ConfirmedMeeting).join(
-            ConfirmedMeetingInvite,
-            ConfirmedMeetingInvite.confirmed_meeting_id == ConfirmedMeeting.id,
-        ).filter(
-            ConfirmedMeetingInvite.user_id == user_data["user_id"],
-        ).all()
+        # Keep only meetings where not all invitees have accepted
+        pending = []
+        for m in organized:
+            if m.invites and not all(inv.status == "accepted" for inv in m.invites):
+                pending.append(m)
+        pending.sort(key=lambda m: m.start_time)
 
-        # Deduplicate and sort
-        seen = set()
-        meetings = []
-        for m in organized + invited:
-            if m.id not in seen:
-                seen.add(m.id)
-                meetings.append(m)
-        meetings.sort(key=lambda m: m.start_time)
-
-        return jsonify([m.to_dict() for m in meetings])
+        return jsonify([m.to_dict() for m in pending])
     finally:
         db.close()
 
@@ -1186,12 +1177,17 @@ def _sync_meeting_to_calendars(confirmed_meeting, db):
         print("[calendar] Already synced, skipping")
         return
 
-    user_ids = [confirmed_meeting.organizer_id]
+    # Collect all participant emails
+    organizer = db.query(User).filter(User.id == confirmed_meeting.organizer_id).first()
+    attendee_emails = []
+    if organizer:
+        attendee_emails.append(organizer.email)
     for inv in confirmed_meeting.invites:
-        if inv.user_id not in user_ids:
-            user_ids.append(inv.user_id)
+        user = db.query(User).filter(User.id == inv.user_id).first()
+        if user and user.email not in attendee_emails:
+            attendee_emails.append(user.email)
 
-    print(f"[calendar] Syncing meeting '{confirmed_meeting.title}' to {len(user_ids)} users: {user_ids}")
+    print(f"[calendar] Syncing meeting '{confirmed_meeting.title}' with attendees: {attendee_emails}")
 
     event_body = {
         "summary": confirmed_meeting.title,
@@ -1205,31 +1201,29 @@ def _sync_meeting_to_calendars(confirmed_meeting, db):
             "dateTime": confirmed_meeting.end_time.isoformat(),
             "timeZone": "America/New_York",
         },
+        "attendees": [{"email": email} for email in attendee_emails],
     }
 
     print(f"[calendar] Event body: {event_body}")
 
-    success_count = 0
-    for uid in user_ids:
-        try:
-            service = get_calendar_service_for_user(uid)
-            if service:
-                service.events().insert(calendarId="primary", body=event_body).execute()
-                print(f"[calendar] Created event for user {uid}")
-                success_count += 1
-            else:
-                print(f"[calendar] No calendar service for user {uid} (missing token?), skipping")
-        except Exception as e:
-            print(f"[calendar] Failed to create event for user {uid}: {e}")
-            import traceback
-            traceback.print_exc()
-
-    if success_count > 0:
-        confirmed_meeting.calendar_synced = True
-        db.commit()
-        print(f"[calendar] Sync complete: {success_count}/{len(user_ids)} succeeded")
-    else:
-        print(f"[calendar] WARNING: All {len(user_ids)} calendar inserts failed, NOT marking as synced")
+    # Create once on organizer's calendar — Google adds it to all attendees
+    try:
+        service = get_calendar_service_for_user(confirmed_meeting.organizer_id)
+        if service:
+            service.events().insert(
+                calendarId="primary",
+                body=event_body,
+                sendUpdates="none",
+            ).execute()
+            print(f"[calendar] Created event on organizer's calendar with {len(attendee_emails)} attendees")
+            confirmed_meeting.calendar_synced = True
+            db.commit()
+        else:
+            print(f"[calendar] No calendar service for organizer (user {confirmed_meeting.organizer_id}), skipping")
+    except Exception as e:
+        print(f"[calendar] Failed to create event: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 # ============ NOTIFICATION ENDPOINTS ============
@@ -1372,6 +1366,26 @@ def api_respond_to_notification(notification_id):
             "notification": notification.to_dict(),
             "calendar_synced": calendar_synced,
         })
+    finally:
+        db.close()
+
+
+@app.route("/api/notifications/clear-responded", methods=["DELETE"])
+def api_clear_responded_notifications():
+    """Delete all notifications that the user has already responded to."""
+    token = session.get("session_token")
+    user_data = get_session(token)
+    if not user_data:
+        return jsonify({"error": "unauthorized"}), 401
+
+    db = SessionLocal()
+    try:
+        deleted = db.query(Notification).filter(
+            Notification.user_id == user_data["user_id"],
+            Notification.response.isnot(None),
+        ).delete(synchronize_session="fetch")
+        db.commit()
+        return jsonify({"deleted": deleted})
     finally:
         db.close()
 
