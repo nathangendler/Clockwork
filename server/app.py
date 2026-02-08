@@ -1644,7 +1644,7 @@ def api_respond_to_notification(notification_id):
 @app.route("/api/notifications/clear-responded", methods=["DELETE"])
 def api_clear_responded_notifications():
     """Delete all notifications that the user has already responded to."""
-    token = session.get("session_token")
+    token = get_auth_token()
     user_data = get_session(token)
     if not user_data:
         return jsonify({"error": "unauthorized"}), 401

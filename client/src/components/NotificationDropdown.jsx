@@ -73,9 +73,8 @@ export default function NotificationDropdown() {
   const hasRespondedNotifications = notifications.some(n => n.response);
 
   function handleClearResponded() {
-    fetch('/api/notifications/clear-responded', {
+    api('/api/notifications/clear-responded', {
       method: 'DELETE',
-      credentials: 'include',
     })
       .then(res => res.json())
       .then(() => {
