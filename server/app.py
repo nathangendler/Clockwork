@@ -501,6 +501,261 @@ def api_events_create():
         db.close()
 
 
+# --- AI Scheduling ---
+
+
+@app.route("/api/events/ai-create", methods=["POST"])
+def api_events_ai_create():
+    """
+    AI-powered meeting creation.
+    Accepts { "prompt": "lunch with naythan chan" } and uses Gemini to parse,
+    resolve contacts, find availability, and pick the best slot.
+    """
+    token = session.get("session_token")
+    if not token:
+        return jsonify({"error": "not authenticated"}), 401
+    user_data = get_session(token)
+    if not user_data:
+        return jsonify({"error": "session expired"}), 401
+
+    data = request.get_json()
+    prompt = (data.get("prompt") or "").strip()
+    if not prompt:
+        return jsonify({"error": "prompt is required"}), 400
+
+    # Step 1: Parse the natural language prompt with Gemini
+    from ai_scheduler import parse_meeting_request, select_best_slot
+
+    try:
+        parsed = parse_meeting_request(prompt, user_data.get("email", ""))
+    except Exception as e:
+        print(f"[ai-schedule] Gemini parse error: {e}")
+        return jsonify({"error": "Failed to understand your request. Try being more specific."}), 400
+
+    print(f"[ai-schedule] Parsed: {json.dumps(parsed, indent=2)}")
+
+    attendee_names = parsed.get("attendee_names", [])
+    if not attendee_names:
+        return jsonify({"error": "No attendees found in your request. Try mentioning who you want to meet with."}), 400
+
+    # Step 2: Resolve attendee names to emails via Google Directory
+    people_service = get_people_service(token)
+    if not people_service:
+        return jsonify({"error": "no people service"}), 500
+
+    resolved_emails = []
+    resolution_log = []
+    for name in attendee_names:
+        try:
+            result = people_service.people().searchDirectoryPeople(
+                query=name,
+                readMask="names,emailAddresses",
+                sources=["DIRECTORY_SOURCE_TYPE_DOMAIN_PROFILE"],
+                pageSize=3,
+            ).execute()
+
+            found = False
+            for person in result.get("people", []):
+                emails = person.get("emailAddresses", [])
+                if emails:
+                    email_val = emails[0]["value"]
+                    if email_val.endswith("@columbia.edu") and email_val != user_data.get("email"):
+                        names_list = person.get("names", [])
+                        display_name = names_list[0]["displayName"] if names_list else email_val
+                        resolved_emails.append(email_val)
+                        resolution_log.append(f"{name} -> {display_name} ({email_val})")
+                        found = True
+                        break
+            if not found:
+                resolution_log.append(f"{name} -> NOT FOUND")
+        except Exception as e:
+            print(f"[ai-schedule] Directory search error for '{name}': {e}")
+            resolution_log.append(f"{name} -> ERROR: {e}")
+
+    print(f"[ai-schedule] Contact resolution: {resolution_log}")
+
+    if not resolved_emails:
+        return jsonify({
+            "error": f"Could not find contacts for: {', '.join(attendee_names)}. Make sure they have a Columbia email.",
+        }), 400
+
+    # Step 3: Compute scheduling window
+    now = datetime.now(timezone.utc)
+    window_days = parsed.get("window_days", 7)
+    window_start = now
+    window_end = now + timedelta(days=window_days)
+
+    # Step 4: Get FreeBusy data for all participants
+    time_min = window_start.isoformat()
+    time_max = window_end.isoformat()
+    participants_payload = []
+
+    organizer_service = get_calendar_service(token)
+    organizer_email = user_data.get("email")
+    organizer_name = user_data.get("name") or ""
+
+    organizer_events = _get_freebusy_for_email(
+        organizer_service, organizer_email, time_min, time_max, DEFAULT_TIMEZONE
+    )
+    participants_payload.append({
+        "id": f"user_{user_data['user_id']}",
+        "name": organizer_name,
+        "email": organizer_email,
+        "timezone": DEFAULT_TIMEZONE,
+        "events": organizer_events,
+    })
+
+    db = SessionLocal()
+    try:
+        invited_users = []
+        for email in resolved_emails:
+            freebusy_events = _get_freebusy_for_email(
+                organizer_service, email, time_min, time_max, DEFAULT_TIMEZONE
+            )
+            participants_payload.append({
+                "id": email,
+                "name": "",
+                "email": email,
+                "timezone": DEFAULT_TIMEZONE,
+                "events": freebusy_events,
+            })
+            user = db.query(User).filter(User.email == email).first()
+            if user:
+                invited_users.append(user)
+
+        # Step 5: Run the scheduler to get top-5 candidate slots
+        duration_minutes = parsed.get("duration_minutes", 60)
+        location_type = parsed.get("location_type", "virtual")
+
+        from scheduler import create_meeting_from_payload
+        org_settings_path = os.path.join(os.path.dirname(__file__), "org_settings.json")
+
+        result = create_meeting_from_payload(
+            people_payload=participants_payload,
+            window_start=window_start,
+            window_end=window_end,
+            duration_minutes=duration_minutes,
+            location_type=location_type,
+            org_settings_path=org_settings_path,
+            top_k=5,
+        )
+
+        if not result:
+            return jsonify({
+                "error": "no_valid_slots",
+                "message": "No available time slots found. Try a wider time window.",
+            }), 409
+
+        start_time, end_time, scored = result
+
+        # Step 6: Let Gemini pick the best slot considering context
+        slots_for_ai = []
+        from scheduler import _start_of_week
+        reference_start = _start_of_week(window_start, tz_str=DEFAULT_TIMEZONE)
+
+        for s in scored:
+            s_start = reference_start + timedelta(minutes=s.start)
+            s_end = reference_start + timedelta(minutes=s.end)
+            slots_for_ai.append({
+                "start_time": s_start.isoformat(),
+                "end_time": s_end.isoformat(),
+                "score": s.score,
+            })
+
+        try:
+            best_index = select_best_slot(slots_for_ai, prompt, parsed)
+        except Exception as e:
+            print(f"[ai-schedule] Gemini select error: {e}, falling back to top scorer")
+            best_index = 0
+
+        best_slot = slots_for_ai[best_index]
+        start_time = datetime.fromisoformat(best_slot["start_time"])
+        end_time = datetime.fromisoformat(best_slot["end_time"])
+
+        print(f"[ai-schedule] Gemini picked slot {best_index + 1}/{len(slots_for_ai)}: "
+              f"{_format_log_time(start_time)} -> {_format_log_time(end_time)}")
+
+        # Step 7: Create the meeting (reuse existing DB logic)
+        summary = parsed.get("title", "Meeting")
+        description = f"Scheduled by AI: \"{prompt}\""
+        urgency = parsed.get("urgency", "normal")
+        location = parsed.get("location") or (
+            "In person" if location_type == "in-person" else "Online"
+        )
+
+        proposal = MeetingProposal(
+            organizer_id=user_data["user_id"],
+            title=summary,
+            description=description,
+            duration_minutes=duration_minutes,
+            urgency=urgency,
+            location=location,
+            window_start=window_start,
+            window_end=window_end,
+            status="confirmed",
+        )
+        db.add(proposal)
+        db.flush()
+
+        for user in invited_users:
+            db.add(MeetingInvite(
+                proposal_id=proposal.id,
+                user_id=user.id,
+                is_required=True,
+                status="pending",
+            ))
+
+        confirmed = ConfirmedMeeting(
+            proposal_id=proposal.id,
+            organizer_id=user_data["user_id"],
+            title=summary,
+            description=description,
+            duration_minutes=duration_minutes,
+            urgency=urgency,
+            location=location,
+            start_time=start_time,
+            end_time=end_time,
+            final_location=location,
+            status="scheduled",
+        )
+        db.add(confirmed)
+        db.flush()
+
+        for user in invited_users:
+            db.add(ConfirmedMeetingInvite(
+                confirmed_meeting_id=confirmed.id,
+                user_id=user.id,
+                is_required=True,
+                status="pending",
+            ))
+
+        db.flush()
+
+        for user in invited_users:
+            organizer_display = organizer_name or organizer_email or "Someone"
+            meeting_time = confirmed.start_time.strftime('%B %d, %Y at %I:%M %p')
+            notification = Notification(
+                user_id=user.id,
+                confirmed_meeting_id=confirmed.id,
+                type="meeting_confirmed",
+                title="Meeting invitation from " + organizer_display,
+                message="You're invited to '" + confirmed.title + "' on " + meeting_time,
+            )
+            db.add(notification)
+
+        db.commit()
+        db.refresh(confirmed)
+
+        return jsonify({
+            "id": confirmed.id,
+            "confirmed_meeting": confirmed.to_dict(),
+            "ai_parsed": parsed,
+            "resolved_contacts": resolution_log,
+        }), 201
+    finally:
+        db.close()
+
+
 # --- Auth routes ---
 
 
