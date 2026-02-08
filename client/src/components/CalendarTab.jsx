@@ -1,11 +1,13 @@
 import { useState, useEffect } from "react";
+import { api } from "../api";
+
 
 export default function CalendarTab() {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/events", { credentials: "include" })
+    api("/api/events")
       .then((res) => res.json())
       .then((data) => {
         setEvents(data);

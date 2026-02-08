@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { api } from "../api";
 
 export default function InviteTab() {
   const [query, setQuery] = useState("");
@@ -21,16 +22,20 @@ export default function InviteTab() {
     if (!query.trim()) return;
     setSearching(true);
 
-    fetch(
-      `/api/contacts/search?q=${encodeURIComponent(query)}`,
-      { credentials: "include" },
-    )
+    api(`/api/contacts/search?q=${encodeURIComponent(query)}`)
       .then((res) => res.json())
       .then((data) => {
-        setResults(data);
+        if (Array.isArray(data)) {
+          setResults(data);
+        } else {
+          setResults([]);
+        }
         setSearching(false);
       })
-      .catch(() => setSearching(false));
+      .catch(() => {
+        setResults([]);
+        setSearching(false);
+      });
   }
 
   function toggleSelect(contact) {
@@ -50,10 +55,9 @@ export default function InviteTab() {
       ? (inPersonLocation || 'In person')
       : (onlinePlatform || 'Online');
 
-    fetch('/api/events/create', {
+    api('/api/events/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
       body: JSON.stringify({
         summary: summary || 'Meeting',
         description,
@@ -104,7 +108,7 @@ export default function InviteTab() {
           className="search-input"
         />
         <button type="submit" className="btn-search" disabled={searching}>
-          {searching ? "Searching..." : "Search"}
+          {searching ? "..." : "Search"}
         </button>
       </form>
 
@@ -140,7 +144,7 @@ export default function InviteTab() {
                 className="chip"
                 onClick={() => toggleSelect(c)}
               >
-                {c.name || c.email} &times;
+                {c.name || c.email} ×
               </span>
             ))}
           </div>
@@ -156,17 +160,16 @@ export default function InviteTab() {
             />
             <label className="form-label">Description</label>
             <textarea
-              placeholder="Add details for attendees"
+              placeholder="Add details"
               value={description}
               onChange={e => setDescription(e.target.value)}
               className="form-textarea"
-              rows={3}
+              rows={2}
             />
-            <label className="form-label">Duration (minutes)</label>
+            <label className="form-label">Duration (min)</label>
             <input
               type="number"
               min="1"
-              step="1"
               placeholder="30"
               value={durationMinutes}
               onChange={e => setDurationMinutes(e.target.value)}
@@ -174,30 +177,16 @@ export default function InviteTab() {
             />
             <label className="form-label">Urgency</label>
             <div className="urgency-toggle">
-              <button
-                type="button"
-                className={`urgency-button ${urgency === 'low' ? 'active' : ''}`}
-                onClick={() => setUrgency('low')}
-                aria-pressed={urgency === 'low'}
-              >
-                Low
-              </button>
-              <button
-                type="button"
-                className={`urgency-button ${urgency === 'normal' ? 'active' : ''}`}
-                onClick={() => setUrgency('normal')}
-                aria-pressed={urgency === 'normal'}
-              >
-                Normal
-              </button>
-              <button
-                type="button"
-                className={`urgency-button ${urgency === 'high' ? 'active' : ''}`}
-                onClick={() => setUrgency('high')}
-                aria-pressed={urgency === 'high'}
-              >
-                High
-              </button>
+              {['low', 'normal', 'high'].map(u => (
+                <button
+                  key={u}
+                  type="button"
+                  className={`urgency-button ${urgency === u ? 'active' : ''}`}
+                  onClick={() => setUrgency(u)}
+                >
+                  {u.charAt(0).toUpperCase() + u.slice(1)}
+                </button>
+              ))}
             </div>
             <label className="form-label">Location</label>
             <div className="location-toggle">
@@ -205,7 +194,6 @@ export default function InviteTab() {
                 <input
                   type="radio"
                   name="locationType"
-                  value="online"
                   checked={locationType === 'online'}
                   onChange={() => setLocationType('online')}
                 />
@@ -215,7 +203,6 @@ export default function InviteTab() {
                 <input
                   type="radio"
                   name="locationType"
-                  value="in-person"
                   checked={locationType === 'in-person'}
                   onChange={() => setLocationType('in-person')}
                 />
@@ -225,7 +212,7 @@ export default function InviteTab() {
             {locationType === 'online' ? (
               <input
                 type="text"
-                placeholder="Platform (Zoom, Google Meet, Teams)"
+                placeholder="Platform (Zoom, Meet)"
                 value={onlinePlatform}
                 onChange={e => setOnlinePlatform(e.target.value)}
                 className="form-input"
@@ -233,16 +220,16 @@ export default function InviteTab() {
             ) : (
               <input
                 type="text"
-                placeholder="Location (building, room)"
+                placeholder="Location"
                 value={inPersonLocation}
                 onChange={e => setInPersonLocation(e.target.value)}
                 className="form-input"
               />
             )}
-            <label className="form-label">Window</label>
+            <label className="form-label">Time Window</label>
             <div className="window-grid">
               <div>
-                <label className="form-sub-label">Earliest</label>
+                <label className="form-sub-label">Start</label>
                 <input
                   type="datetime-local"
                   value={windowStart}
@@ -252,7 +239,7 @@ export default function InviteTab() {
                 />
               </div>
               <div>
-                <label className="form-sub-label">Latest</label>
+                <label className="form-sub-label">End</label>
                 <input
                   type="datetime-local"
                   value={windowEnd}
@@ -268,10 +255,10 @@ export default function InviteTab() {
           </form>
 
           {status === "success" && (
-            <p className="success-msg">Meeting created and invites sent!</p>
+            <p className="success-msg">Meeting created!</p>
           )}
           {status === "error" && (
-            <p className="error-msg">Failed to create meeting. Try again.</p>
+            <p className="error-msg">Failed to create meeting.</p>
           )}
         </div>
       )}

@@ -3,6 +3,7 @@ import os
 from dotenv import load_dotenv
 import json
 from zoneinfo import ZoneInfo
+from flask_cors import CORS
 
 load_dotenv()
 
@@ -31,7 +32,36 @@ from db import (
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-key-change-in-prod")
-CORS(app, resources={r"/api/*": {"origins": "http://localhost:5173"}}, supports_credentials=True)
+
+
+def get_auth_token():
+    """
+    Get authentication token from either:
+    1. Flask session cookie (browser dev mode)
+    2. Authorization Bearer header (Chrome extension)
+    """
+    # Check session cookie first
+    token = session.get("session_token")
+    if token:
+        return token
+
+    # Check Authorization header
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        return auth_header[7:]  # Remove "Bearer " prefix
+
+    return None
+
+CORS(app, supports_credentials=True, origins=[
+    "http://127.0.0.1:5173",
+    "http://localhost:5173",
+    "chrome-extension://<YOUR_EXTENSION_ID>"
+])
+
+app.config.update(
+    SESSION_COOKIE_SAMESITE="None",
+    SESSION_COOKIE_SECURE=True,
+)
 
 # ===== Scheduling helpers =====
 
@@ -54,7 +84,6 @@ def _parse_datetime(value, field_name, assume_tz=ZoneInfo("America/New_York")):
         except ValueError as exc:
             raise ValueError(f"invalid {field_name} datetime") from exc
     raise ValueError(f"invalid {field_name} datetime")
-
 
 def _build_participant_payload(user, timezone_name, events=None):
     return {
@@ -220,7 +249,7 @@ with app.app_context():
 
 @app.route("/")
 def index():
-    token = session.get("session_token")
+    token = get_auth_token()
     if token:
         user = get_session(token)
         if user:
@@ -233,7 +262,7 @@ def index():
 
 @app.route("/api/me")
 def api_me():
-    token = session.get("session_token")
+    token = get_auth_token()
     if not token:
         return jsonify({"error": "not authenticated"}), 401
     user = get_session(token)
@@ -244,7 +273,7 @@ def api_me():
 
 @app.route("/api/events")
 def api_events():
-    token = session.get("session_token")
+    token = get_auth_token()
     if not token:
         return jsonify({"error": "not authenticated"}), 401
     user_data = get_session(token)
@@ -281,7 +310,7 @@ def api_events():
 
 @app.route("/api/events/<int:event_id>", methods=["DELETE"])
 def api_events_delete(event_id):
-    token = session.get("session_token")
+    token = get_auth_token()
     if not token:
         return jsonify({"error": "not authenticated"}), 401
     user_data = get_session(token)
@@ -312,7 +341,7 @@ def api_events_delete(event_id):
 
 @app.route("/api/contacts/search")
 def api_contacts_search():
-    token = session.get("session_token")
+    token = get_auth_token()
     if not token:
         return jsonify({"error": "not authenticated"}), 401
     query = request.args.get("q", "")
@@ -343,7 +372,7 @@ def api_contacts_search():
 
 @app.route("/api/events/create", methods=["POST"])
 def api_events_create():
-    token = session.get("session_token")
+    token = get_auth_token()
     if not token:
         return jsonify({"error": "not authenticated"}), 401
     user_data = get_session(token)
@@ -378,7 +407,7 @@ def api_events_create():
 
     db = SessionLocal()
     try:
-        organizer_service = get_calendar_service(session.get("session_token"))
+        organizer_service = get_calendar_service(get_auth_token())
         organizer_email = user_data.get("email")
         organizer_name = user_data.get("name") or ""
         organizer_events = _get_freebusy_for_email(
@@ -534,6 +563,103 @@ def logout():
     return redirect("http://localhost:5173")
 
 
+@app.route("/auth/extension/token", methods=["POST"])
+def auth_extension_token():
+    """
+    Token exchange endpoint for Chrome extension.
+    Receives authorization code from extension's launchWebAuthFlow,
+    exchanges it for tokens, creates user/session, returns session token.
+    """
+    import requests
+    import secrets
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "JSON body required"}), 400
+
+    code = data.get("code")
+    redirect_uri = data.get("redirectUri")
+
+    if not code or not redirect_uri:
+        return jsonify({"error": "code and redirectUri required"}), 400
+
+    # Load client credentials
+    import json
+    client_secret_path = os.path.join(os.path.dirname(__file__), "client_secret.json")
+    with open(client_secret_path) as f:
+        client_config = json.load(f)["web"]
+
+    # Exchange code for tokens
+    token_response = requests.post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            "code": code,
+            "client_id": client_config["client_id"],
+            "client_secret": client_config["client_secret"],
+            "redirect_uri": redirect_uri,
+            "grant_type": "authorization_code",
+        },
+    )
+
+    if not token_response.ok:
+        return jsonify({"error": "token exchange failed", "details": token_response.text}), 400
+
+    tokens = token_response.json()
+    access_token = tokens.get("access_token")
+    refresh_token = tokens.get("refresh_token")
+
+    # Get user info
+    userinfo_response = requests.get(
+        "https://www.googleapis.com/oauth2/v2/userinfo",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+
+    if not userinfo_response.ok:
+        return jsonify({"error": "failed to get user info"}), 400
+
+    user_info = userinfo_response.json()
+    email = user_info.get("email")
+    name = user_info.get("name", "")
+
+    if not email:
+        return jsonify({"error": "no email in user info"}), 400
+
+    # Create or update user and session
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.email == email).first()
+        if not user:
+            user = User(email=email, name=name)
+            db.add(user)
+
+        user.google_access_token = access_token
+        user.google_refresh_token = refresh_token
+        user.updated_at = datetime.now(timezone.utc)
+
+        db.commit()
+        db.refresh(user)
+
+        # Create session
+        from db import Session as DbSession
+        session_token = secrets.token_urlsafe(32)
+        expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+        db_session = DbSession(
+            session_token=session_token,
+            user_id=user.id,
+            expires_at=expires_at,
+        )
+        db.add(db_session)
+        db.commit()
+
+        return jsonify({
+            "session_token": session_token,
+            "email": email,
+            "name": name,
+        })
+    finally:
+        db.close()
+
+
 # ============ API ENDPOINTS ============
 
 @app.route("/api/users/lookup", methods=["GET"])
@@ -654,7 +780,7 @@ def api_create_meeting():
     }
     """
     # Check if user is logged in
-    token = session.get("session_token")
+    token = get_auth_token()
     user_data = get_session(token)
     if not user_data:
         return jsonify({"error": "unauthorized"}), 401
@@ -708,7 +834,7 @@ def api_create_meeting():
         db.flush()  # Get the proposal ID
 
         participants_payload = []
-        organizer_service = get_calendar_service(session.get("session_token"))
+        organizer_service = get_calendar_service(get_auth_token())
         organizer_email = user_data.get("email")
         organizer_name = user_data.get("name") or ""
         if participant_events is None:
@@ -848,7 +974,7 @@ def api_create_meeting():
 @app.route("/api/meetings", methods=["GET"])
 def api_get_my_meetings():
     """Get meeting proposals organized by the current user."""
-    token = session.get("session_token")
+    token = get_auth_token()
     user_data = get_session(token)
     if not user_data:
         return jsonify({"error": "unauthorized"}), 401
@@ -867,7 +993,7 @@ def api_get_my_meetings():
 @app.route("/api/meetings/<int:meeting_id>", methods=["GET"])
 def api_get_meeting(meeting_id):
     """Get a specific meeting proposal by ID."""
-    token = session.get("session_token")
+    token = get_auth_token()
     user_data = get_session(token)
     if not user_data:
         return jsonify({"error": "unauthorized"}), 401
@@ -973,7 +1099,7 @@ def api_get_my_invites():
     Get all meeting invites for the current user.
     This is what shows up when user opens the Chrome extension.
     """
-    token = session.get("session_token")
+    token = get_auth_token()
     user_data = get_session(token)
     if not user_data:
         return jsonify({"error": "unauthorized"}), 401
@@ -1013,7 +1139,7 @@ def api_respond_to_invite(invite_id):
         "response": "accepted"  // or "declined"
     }
     """
-    token = session.get("session_token")
+    token = get_auth_token()
     user_data = get_session(token)
     if not user_data:
         return jsonify({"error": "unauthorized"}), 401
@@ -1114,7 +1240,7 @@ def api_get_notifications():
     Get all notifications for the current user.
     Returns LinkedIn-style meeting confirmation notifications.
     """
-    token = session.get("session_token")
+    token = get_auth_token()
     user_data = get_session(token)
     if not user_data:
         return jsonify({"error": "unauthorized"}), 401
@@ -1133,7 +1259,7 @@ def api_get_notifications():
 @app.route("/api/notifications/unread-count", methods=["GET"])
 def api_get_unread_count():
     """Get count of unread notifications."""
-    token = session.get("session_token")
+    token = get_auth_token()
     user_data = get_session(token)
     if not user_data:
         return jsonify({"error": "unauthorized"}), 401
@@ -1153,7 +1279,7 @@ def api_get_unread_count():
 @app.route("/api/notifications/<int:notification_id>/read", methods=["POST"])
 def api_mark_notification_read(notification_id):
     """Mark a notification as read."""
-    token = session.get("session_token")
+    token = get_auth_token()
     user_data = get_session(token)
     if not user_data:
         return jsonify({"error": "unauthorized"}), 401
@@ -1186,7 +1312,7 @@ def api_respond_to_notification(notification_id):
         "response": "accepted"  // or "declined"
     }
     """
-    token = session.get("session_token")
+    token = get_auth_token()
     user_data = get_session(token)
     if not user_data:
         return jsonify({"error": "unauthorized"}), 401
