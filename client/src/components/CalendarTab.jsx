@@ -1,34 +1,30 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 
-export default function CalendarTab() {
+export default function CalendarTab({ token }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  function loadEvents() {
-    fetch('/api/events', { credentials: 'include' })
-      .then(res => res.json())
-      .then(data => { setEvents(data); setLoading(false); })
-      .catch(() => setLoading(false));
-  }
+  useEffect(() => {
+    if (!token) return;
 
-  useEffect(() => { loadEvents(); }, []);
-
-  function handleDelete(id) {
-    fetch(`/api/events/${id}`, {
-      method: 'DELETE',
-      credentials: 'include',
+    fetch("http://localhost:8080/api/events", {
+      headers: { Authorization: `Bearer ${token}` },
     })
-      .then(res => {
-        if (res.ok) {
-          setEvents(prev => prev.filter(e => e.id !== id));
-        }
-      });
-  }
+      .then((res) => res.json())
+      .then((data) => {
+        setEvents(data);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, [token]);
 
   if (loading) return <div className="no-events">Loading events...</div>;
-  if (events.length === 0) return <div className="no-events">No meetings scheduled.</div>;
+  if (events.length === 0)
+    return (
+      <div className="no-events">No upcoming events on your calendar.</div>
+    );
 
-  let currentDate = '';
+  let currentDate = "";
 
   return (
     <div>

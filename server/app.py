@@ -487,6 +487,21 @@ def api_events_create():
                 status="pending",
             ))
 
+        db.flush()
+
+        # Create notifications for all invitees (NOT the organizer)
+        for user in invited_users:
+            organizer_display = organizer.name or organizer.email if organizer else "Someone"
+            meeting_time = confirmed.start_time.strftime('%B %d, %Y at %I:%M %p')
+            notification = Notification(
+                user_id=user.id,
+                confirmed_meeting_id=confirmed.id,
+                type="meeting_confirmed",
+                title="Meeting invitation from " + organizer_display,
+                message="You're invited to '" + confirmed.title + "' on " + meeting_time,
+            )
+            db.add(notification)
+
         db.commit()
         db.refresh(confirmed)
 
@@ -797,6 +812,21 @@ def api_create_meeting():
             db.add(confirmed_invite)
 
         proposal.status = "confirmed"
+
+        db.flush()
+
+        # Create notifications for all invitees (NOT the organizer)
+        for user in invited_users:
+            organizer_display = organizer.name or organizer.email if organizer else "Someone"
+            meeting_time = confirmed_meeting.start_time.strftime('%B %d, %Y at %I:%M %p')
+            notification = Notification(
+                user_id=user.id,
+                confirmed_meeting_id=confirmed_meeting.id,
+                type="meeting_confirmed",
+                title="Meeting invitation from " + organizer_display,
+                message="You're invited to '" + confirmed_meeting.title + "' on " + meeting_time,
+            )
+            db.add(notification)
 
         db.commit()
         db.refresh(proposal)
