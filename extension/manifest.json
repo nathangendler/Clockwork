@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Clockwork",
+  "version": "0.1.0",
+  "description": "Smart meeting scheduler for your calendar",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Clockwork"
+  },
+  "permissions": [
+    "storage",
+    "identity"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:8080/*",
+    "http://localhost:8080/*"
+  ],
+  "oauth2": {
+    "client_id": "674866953178-lst3r3er2pvjji1o8rji9loepe2qb8rp.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/calendar.readonly",
+      "https://www.googleapis.com/auth/calendar.events",
+      "https://www.googleapis.com/auth/directory.readonly",
+      "openid",
+      "https://www.googleapis.com/auth/userinfo.email"
+    ]
+  }
+}
