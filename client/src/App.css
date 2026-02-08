@@ -50,19 +50,18 @@ body {
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 500px;
+  height: 550px;
   background: linear-gradient(135deg, #1a73e8 0%, #0a66c2 100%);
-  border-radius: 12px;
 }
 
 .login-card {
   text-align: center;
   background: white;
-  padding: 40px 32px;
+  padding: 32px 28px;
   border-radius: 12px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
-  width: 90%;
-  max-width: 320px;
+  width: 85%;
+  max-width: 300px;
 }
 
 .login-card h1 {
