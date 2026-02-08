@@ -10,9 +10,16 @@ export default function NotificationDropdown() {
   // Fetch unread count on mount and periodically
   useEffect(() => {
     fetchUnreadCount();
-    const interval = setInterval(fetchUnreadCount, 30000); // Poll every 30 seconds
+    const interval = setInterval(fetchUnreadCount, 10000);
     return () => clearInterval(interval);
   }, []);
+
+  // Auto-refresh notifications while dropdown is open
+  useEffect(() => {
+    if (!isOpen) return;
+    const interval = setInterval(fetchNotifications, 10000);
+    return () => clearInterval(interval);
+  }, [isOpen]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -48,6 +55,21 @@ export default function NotificationDropdown() {
       fetchNotifications();
     }
     setIsOpen(!isOpen);
+  }
+
+  const hasRespondedNotifications = notifications.some(n => n.response);
+
+  function handleClearResponded() {
+    fetch('/api/notifications/clear-responded', {
+      method: 'DELETE',
+      credentials: 'include',
+    })
+      .then(res => res.json())
+      .then(() => {
+        fetchNotifications();
+        fetchUnreadCount();
+      })
+      .catch(() => {});
   }
 
   function handleRespond(notificationId, response) {
@@ -112,6 +134,11 @@ export default function NotificationDropdown() {
         <div className="notification-dropdown">
           <div className="notification-header">
             <h3>Notifications</h3>
+            {hasRespondedNotifications && (
+              <button className="notification-clear-btn" onClick={handleClearResponded}>
+                Clear
+              </button>
+            )}
           </div>
 
           <div className="notification-list">

@@ -164,6 +164,21 @@
   padding: 2px 8px;
   border-radius: 12px;
 }
+.attendee-chip.status-accepted {
+  background: #e6f4ea;
+  color: #1e8e3e;
+}
+.attendee-chip.status-declined {
+  background: #fce8e6;
+  color: #d93025;
+}
+.attendee-chip.status-pending {
+  background: #fef7e0;
+  color: #b06000;
+}
+.attendee-status {
+  font-weight: 600;
+}
 .btn-delete {
   background: none;
   border: 1px solid #dadce0;
@@ -446,6 +461,9 @@
 .notification-header {
   padding: 16px 20px;
   border-bottom: 1px solid #e8e8e8;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .notification-header h3 {
@@ -453,6 +471,24 @@
   font-weight: 600;
   color: #191919;
   margin: 0;
+}
+
+.notification-clear-btn {
+  background: none;
+  border: 1px solid #666;
+  color: #666;
+  padding: 4px 12px;
+  border-radius: 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.notification-clear-btn:hover {
+  background: #f3f4f6;
+  border-color: #191919;
+  color: #191919;
 }
 
 .notification-list {

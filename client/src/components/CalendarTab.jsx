@@ -4,7 +4,7 @@ export default function CalendarTab() {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  function fetchEvents() {
     fetch("/api/events", { credentials: "include" })
       .then((res) => res.json())
       .then((data) => {
@@ -12,12 +12,18 @@ export default function CalendarTab() {
         setLoading(false);
       })
       .catch(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    fetchEvents();
+    const interval = setInterval(fetchEvents, 10000);
+    return () => clearInterval(interval);
   }, []);
 
   if (loading) return <div className="no-events">Loading events...</div>;
   if (events.length === 0)
     return (
-      <div className="no-events">No upcoming events on your calendar.</div>
+      <div className="no-events">No meetings pending acceptance.</div>
     );
 
   const TZ = "America/New_York";
@@ -32,6 +38,19 @@ export default function CalendarTab() {
       minute: "2-digit",
     });
     return { date, time };
+  }
+
+  function handleDelete(eventId) {
+    fetch(`/api/events/${eventId}`, {
+      method: 'DELETE',
+      credentials: 'include',
+    })
+      .then(res => {
+        if (res.ok) {
+          setEvents(prev => prev.filter(e => e.id !== eventId));
+        }
+      })
+      .catch(() => {});
   }
 
   let currentDate = "";
@@ -63,7 +82,12 @@ export default function CalendarTab() {
                 {event.invites && event.invites.length > 0 && (
                   <div className="event-attendees">
                     {event.invites.map(inv => (
-                      <span key={inv.id} className="attendee-chip">{inv.name || inv.email}</span>
+                      <span key={inv.id} className={`attendee-chip status-${inv.status}`}>
+                        {inv.name || inv.email}
+                        <span className="attendee-status">
+                          {inv.status === 'accepted' ? ' ✓' : inv.status === 'declined' ? ' ✗' : ' …'}
+                        </span>
+                      </span>
                     ))}
                   </div>
                 )}
