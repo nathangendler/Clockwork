@@ -20,19 +20,33 @@ export default function CalendarTab() {
       <div className="no-events">No upcoming events on your calendar.</div>
     );
 
+  const TZ = "America/New_York";
+
+  function toEST(isoString) {
+    if (!isoString) return { date: "", time: "" };
+    const d = new Date(isoString);
+    const date = d.toLocaleDateString("en-CA", { timeZone: TZ }); // YYYY-MM-DD
+    const time = d.toLocaleTimeString("en-US", {
+      timeZone: TZ,
+      hour: "numeric",
+      minute: "2-digit",
+    });
+    return { date, time };
+  }
+
   let currentDate = "";
 
   return (
     <div>
       {events.map((event) => {
-        const startDt = event.start_time || '';
-        const endDt = event.end_time || '';
-        const datePart = startDt.slice(0, 10);
+        const start = toEST(event.start_time);
+        const end = toEST(event.end_time);
+        const datePart = start.date;
         const showDateHeader = datePart !== currentDate;
         if (showDateHeader) currentDate = datePart;
 
-        const startTime = startDt.slice(11, 16);
-        const endTime = endDt.slice(11, 16);
+        const startTime = start.time;
+        const endTime = end.time;
 
         return (
           <div key={event.id}>

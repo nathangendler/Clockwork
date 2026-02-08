@@ -1049,6 +1049,63 @@ def api_respond_to_invite(invite_id):
         db.close()
 
 
+# ============ CALENDAR SYNC ============
+
+def _sync_meeting_to_calendars(confirmed_meeting, db):
+    """
+    Create a Google Calendar event on every participant's calendar
+    (organizer + all invitees).  Called once all invitees have accepted.
+    """
+    if confirmed_meeting.calendar_synced:
+        print("[calendar] Already synced, skipping")
+        return
+
+    user_ids = [confirmed_meeting.organizer_id]
+    for inv in confirmed_meeting.invites:
+        if inv.user_id not in user_ids:
+            user_ids.append(inv.user_id)
+
+    print(f"[calendar] Syncing meeting '{confirmed_meeting.title}' to {len(user_ids)} users: {user_ids}")
+
+    event_body = {
+        "summary": confirmed_meeting.title,
+        "description": confirmed_meeting.description or "",
+        "location": confirmed_meeting.final_location or confirmed_meeting.location or "",
+        "start": {
+            "dateTime": confirmed_meeting.start_time.isoformat(),
+            "timeZone": "America/New_York",
+        },
+        "end": {
+            "dateTime": confirmed_meeting.end_time.isoformat(),
+            "timeZone": "America/New_York",
+        },
+    }
+
+    print(f"[calendar] Event body: {event_body}")
+
+    success_count = 0
+    for uid in user_ids:
+        try:
+            service = get_calendar_service_for_user(uid)
+            if service:
+                service.events().insert(calendarId="primary", body=event_body).execute()
+                print(f"[calendar] Created event for user {uid}")
+                success_count += 1
+            else:
+                print(f"[calendar] No calendar service for user {uid} (missing token?), skipping")
+        except Exception as e:
+            print(f"[calendar] Failed to create event for user {uid}: {e}")
+            import traceback
+            traceback.print_exc()
+
+    if success_count > 0:
+        confirmed_meeting.calendar_synced = True
+        db.commit()
+        print(f"[calendar] Sync complete: {success_count}/{len(user_ids)} succeeded")
+    else:
+        print(f"[calendar] WARNING: All {len(user_ids)} calendar inserts failed, NOT marking as synced")
+
+
 # ============ NOTIFICATION ENDPOINTS ============
 
 @app.route("/api/notifications", methods=["GET"])
@@ -1155,12 +1212,39 @@ def api_respond_to_notification(notification_id):
         notification.response = response
         notification.responded_at = datetime.now(timezone.utc)
         notification.is_read = True
+
+        # Keep ConfirmedMeetingInvite in sync with the notification response
+        confirmed_invite = db.query(ConfirmedMeetingInvite).filter(
+            ConfirmedMeetingInvite.confirmed_meeting_id == notification.confirmed_meeting_id,
+            ConfirmedMeetingInvite.user_id == user_data["user_id"],
+        ).first()
+        if confirmed_invite:
+            confirmed_invite.status = response
+            confirmed_invite.responded_at = datetime.now(timezone.utc)
+
         db.commit()
         db.refresh(notification)
+
+        # If all invitees accepted, sync to everyone's Google Calendar
+        calendar_synced = False
+        if response == "accepted":
+            meeting = notification.confirmed_meeting
+            all_notifications = db.query(Notification).filter(
+                Notification.confirmed_meeting_id == meeting.id,
+            ).all()
+            responses = {n.user_id: n.response for n in all_notifications}
+            all_accepted = all(r == "accepted" for r in responses.values())
+            print(f"[calendar-sync] Meeting {meeting.id}: notification responses = {responses}")
+            print(f"[calendar-sync] all_accepted={all_accepted}, calendar_synced={meeting.calendar_synced}")
+            if all_accepted and not meeting.calendar_synced:
+                print(f"[calendar-sync] Triggering calendar sync for meeting {meeting.id}")
+                _sync_meeting_to_calendars(meeting, db)
+                calendar_synced = True
 
         return jsonify({
             "message": "Meeting " + response,
             "notification": notification.to_dict(),
+            "calendar_synced": calendar_synced,
         })
     finally:
         db.close()

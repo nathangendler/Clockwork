@@ -134,6 +134,7 @@ class ConfirmedMeeting(Base):
 
     # Status tracking
     status = Column(String(50), default="scheduled")  # scheduled, completed, cancelled
+    calendar_synced = Column(Boolean, default=False)
 
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
