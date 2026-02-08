@@ -130,8 +130,10 @@ Return ONLY a JSON object: {{"slot_number": N}} where N is the 1-based slot numb
     )
 
     text = response.text.strip()
+    print(f"[ai-schedule] Gemini select raw response: {text}")
     parsed = json.loads(text)
-    slot_number = int(parsed.get("slot_number", 1))
+    raw = parsed.get("slot_number")
+    slot_number = int(raw) if raw is not None else 1
 
     # Convert to 0-based, clamped
     index = max(0, min(slot_number - 1, len(scored_slots) - 1))

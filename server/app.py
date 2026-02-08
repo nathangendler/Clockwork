@@ -637,7 +637,7 @@ def api_events_ai_create():
             duration_minutes=duration_minutes,
             location_type=location_type,
             org_settings_path=org_settings_path,
-            top_k=5,
+            top_k=30,
         )
 
         if not result:
@@ -661,6 +661,10 @@ def api_events_ai_create():
                 "end_time": s_end.isoformat(),
                 "score": s.score,
             })
+
+        print(f"[ai-schedule] Candidate slots for Gemini ({len(slots_for_ai)}):")
+        for i, slot in enumerate(slots_for_ai):
+            print(f"  {i + 1}. {_format_log_time(slot['start_time'])} -> {_format_log_time(slot['end_time'])} (score: {slot['score']:.0f})")
 
         try:
             best_index = select_best_slot(slots_for_ai, prompt, parsed)
