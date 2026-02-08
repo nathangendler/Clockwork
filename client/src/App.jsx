@@ -48,13 +48,15 @@ function App() {
   return (
     <div className="app">
       <Header email={email} onLogout={handleLogout} />
-      <Tabs activeTab={activeTab} onTabChange={setActiveTab} />
-      <div className="content">
-        {activeTab === "calendar" ? (
-          <CalendarTab />
-        ) : (
-          <InviteTab />
-        )}
+      <div className="app-body">
+        <Tabs activeTab={activeTab} onTabChange={setActiveTab} />
+        <main className="content">
+          {activeTab === "calendar" ? (
+            <CalendarTab onInviteClick={() => setActiveTab("settings")} />
+          ) : (
+            <InviteTab />
+          )}
+        </main>
       </div>
     </div>
   );
