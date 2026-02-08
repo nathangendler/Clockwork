@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-export default function InviteTab({ token }) {
+export default function InviteTab() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [selected, setSelected] = useState([]);
@@ -22,10 +22,8 @@ export default function InviteTab({ token }) {
     setSearching(true);
 
     fetch(
-      `http://localhost:8080/api/contacts/search?q=${encodeURIComponent(query)}`,
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      },
+      `/api/contacts/search?q=${encodeURIComponent(query)}`,
+      { credentials: "include" },
     )
       .then((res) => res.json())
       .then((data) => {
