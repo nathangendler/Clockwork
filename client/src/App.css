@@ -498,9 +498,14 @@ body {
 }
 
 .window-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.window-grid input[type="datetime-local"] {
+  width: 100%;
+  font-size: 11px;
 }
 
 .btn-create {
