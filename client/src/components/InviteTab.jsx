@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState } from 'react';
 
-export default function InviteTab({ token }) {
-  const [query, setQuery] = useState("");
+export default function InviteTab() {
+  const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [selected, setSelected] = useState([]);
   const [summary, setSummary] = useState('');
@@ -20,31 +20,16 @@ export default function InviteTab({ token }) {
     e.preventDefault();
     if (!query.trim()) return;
     setSearching(true);
-
-    const fetchOptions = token === "session"
-      ? { credentials: "include" }
-      : { headers: { Authorization: `Bearer ${token}` } };
-
-    fetch(
-      `http://localhost:8080/api/contacts/search?q=${encodeURIComponent(query)}`,
-      fetchOptions,
-    )
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data)) {
-          setResults(data);
-        } else {
-          setResults([]);
-        }
-        setSearching(false);
-      })
+    fetch(`/api/contacts/search?q=${encodeURIComponent(query)}`, { credentials: 'include' })
+      .then(res => res.json())
+      .then(data => { setResults(data); setSearching(false); })
       .catch(() => setSearching(false));
   }
 
   function toggleSelect(contact) {
-    setSelected((prev) => {
-      const exists = prev.find((c) => c.email === contact.email);
-      if (exists) return prev.filter((c) => c.email !== contact.email);
+    setSelected(prev => {
+      const exists = prev.find(c => c.email === contact.email);
+      if (exists) return prev.filter(c => c.email !== contact.email);
       return [...prev, contact];
     });
   }
@@ -53,24 +38,31 @@ export default function InviteTab({ token }) {
     e.preventDefault();
     if (!windowStart || !windowEnd || selected.length === 0) return;
     setStatus('creating');
-    fetch('http://localhost:8080/api/events/create', {
+
+    const locationValue = locationType === 'in-person'
+      ? (inPersonLocation || 'In person')
+      : (onlinePlatform || 'Online');
+
+    fetch('/api/events/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
       body: JSON.stringify({
         summary: summary || 'Meeting',
+        description,
+        durationMinutes: parseInt(durationMinutes, 10) || 60,
+        urgency,
+        location: locationValue,
         start: windowStart,
         end: windowEnd,
-        durationMinutes: parseInt(durationMinutes, 10) || 60,
-        locationType: locationType === 'in-person' ? 'in-person' : 'virtual',
         attendees: selected.map(c => c.email),
-        urgency,
+        locationType: locationType === 'in-person' ? 'in-person' : 'virtual',
       }),
     })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.id) {
-          setStatus("success");
+      .then(async res => ({ ok: res.ok, status: res.status, data: await res.json() }))
+      .then(result => {
+        if (result.ok) {
+          setStatus('success');
           setSelected([]);
           setSummary('');
           setDescription('');
@@ -82,12 +74,15 @@ export default function InviteTab({ token }) {
           setWindowStart('');
           setWindowEnd('');
           setResults([]);
-          setQuery("");
+          setQuery('');
         } else {
-          setStatus("error");
+          if (result.status === 409 && result.data?.error === 'no_valid_slots') {
+            alert('No available time slots were found for that window.');
+          }
+          setStatus('error');
         }
       })
-      .catch(() => setStatus("error"));
+      .catch(() => setStatus('error'));
   }
 
   return (
@@ -98,28 +93,26 @@ export default function InviteTab({ token }) {
           type="text"
           placeholder="Search contacts..."
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={e => setQuery(e.target.value)}
           className="search-input"
         />
         <button type="submit" className="btn-search" disabled={searching}>
-          {searching ? "Searching..." : "Search"}
+          {searching ? 'Searching...' : 'Search'}
         </button>
       </form>
 
       {/* Search results */}
       {results.length > 0 && (
         <div className="contact-results">
-          {results.map((contact) => {
-            const isSelected = selected.some((c) => c.email === contact.email);
+          {results.map(contact => {
+            const isSelected = selected.some(c => c.email === contact.email);
             return (
               <div
                 key={contact.email}
-                className={`contact-card ${isSelected ? "selected" : ""}`}
+                className={`contact-card ${isSelected ? 'selected' : ''}`}
                 onClick={() => toggleSelect(contact)}
               >
-                <div className="contact-name">
-                  {contact.name || contact.email}
-                </div>
+                <div className="contact-name">{contact.name || contact.email}</div>
                 <div className="contact-email">{contact.email}</div>
               </div>
             );
@@ -132,12 +125,8 @@ export default function InviteTab({ token }) {
         <div className="selected-section">
           <h3>Inviting ({selected.length})</h3>
           <div className="selected-chips">
-            {selected.map((c) => (
-              <span
-                key={c.email}
-                className="chip"
-                onClick={() => toggleSelect(c)}
-              >
+            {selected.map(c => (
+              <span key={c.email} className="chip" onClick={() => toggleSelect(c)}>
                 {c.name || c.email} &times;
               </span>
             ))}
@@ -149,7 +138,7 @@ export default function InviteTab({ token }) {
               type="text"
               placeholder="Meeting title"
               value={summary}
-              onChange={(e) => setSummary(e.target.value)}
+              onChange={e => setSummary(e.target.value)}
               className="form-input"
             />
             <label className="form-label">Description</label>
@@ -265,12 +254,8 @@ export default function InviteTab({ token }) {
             </button>
           </form>
 
-          {status === "success" && (
-            <p className="success-msg">Meeting created and invites sent!</p>
-          )}
-          {status === "error" && (
-            <p className="error-msg">Failed to create meeting. Try again.</p>
-          )}
+          {status === 'success' && <p className="success-msg">Meeting created and invites sent!</p>}
+          {status === 'error' && <p className="error-msg">Failed to create meeting. Try again.</p>}
         </div>
       )}
     </div>

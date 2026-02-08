@@ -2,6 +2,7 @@ from datetime import datetime, timezone, timedelta
 import os
 from dotenv import load_dotenv
 import json
+from zoneinfo import ZoneInfo
 
 load_dotenv()
 
@@ -14,6 +15,7 @@ from auth import (
     get_session,
     get_people_service,
     get_user_by_email,
+    get_calendar_service,
     get_calendar_service_for_user,
 )
 from db import (
@@ -36,14 +38,19 @@ CORS(app, resources={r"/api/*": {"origins": "http://localhost:5173"}}, supports_
 DEFAULT_TIMEZONE = "America/New_York"
 
 
-def _parse_datetime(value, field_name):
+def _parse_datetime(value, field_name, assume_tz=ZoneInfo("America/New_York")):
     if value is None or value == "":
         return None
     if isinstance(value, datetime):
-        return value
+        if value.tzinfo is None:
+            return value.replace(tzinfo=assume_tz)
+        return value.astimezone(assume_tz)
     if isinstance(value, str):
         try:
-            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                return dt.replace(tzinfo=assume_tz)
+            return dt.astimezone(assume_tz)
         except ValueError as exc:
             raise ValueError(f"invalid {field_name} datetime") from exc
     raise ValueError(f"invalid {field_name} datetime")
@@ -57,6 +64,26 @@ def _build_participant_payload(user, timezone_name, events=None):
         "timezone": timezone_name,
         "events": events or [],
     }
+
+
+def _format_log_time(value):
+    if value is None:
+        return "None"
+    if isinstance(value, datetime):
+        dt = value
+    elif isinstance(value, str):
+        try:
+            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return value
+    else:
+        return str(value)
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    local_dt = dt.astimezone(ZoneInfo("America/New_York"))
+    formatted = local_dt.strftime("%Y-%m-%d %I:%M %p %Z")
+    return formatted.lstrip("0").replace(" 0", " ")
 
 
 def _normalize_google_event(event, fallback_timezone):
@@ -151,7 +178,13 @@ def _schedule_meeting(
         from scheduler import create_meeting_from_payload
 
         org_settings_path = os.path.join(os.path.dirname(__file__), "org_settings.json")
-        print(f"[scheduler] window_start={window_start}, window_end={window_end}, duration={duration_minutes}min, location={location_type}")
+        print(
+            "[scheduler] window_start="
+            f"{_format_log_time(window_start)}, "
+            "window_end="
+            f"{_format_log_time(window_end)}, "
+            f"duration={duration_minutes}min, location={location_type}"
+        )
         print(f"[scheduler] participants: {len(participants_payload)}")
         result = create_meeting_from_payload(
             people_payload=participants_payload,
@@ -164,23 +197,21 @@ def _schedule_meeting(
         )
         if result:
             start_time, end_time, scored = result
-            print(f"[scheduler] SUCCESS: start={start_time}, end={end_time}, score={scored[0].score if scored else 'N/A'}")
+            print(
+                "[scheduler] SUCCESS: start="
+                f"{_format_log_time(start_time)}, "
+                "end="
+                f"{_format_log_time(end_time)}, "
+                f"score={scored[0].score if scored else 'N/A'}"
+            )
             return start_time, end_time
-        else:
-            print("[scheduler] returned None — no valid slots found")
+        print("[scheduler] returned None — no valid slots found")
     except Exception as e:
         print(f"[scheduler] ERROR: {e}")
         import traceback
         traceback.print_exc()
 
-    print("[scheduler] FALLBACK: using simple window_start + duration")
-    duration = timedelta(minutes=duration_minutes)
-    start_time = window_start or (datetime.now(timezone.utc) + timedelta(hours=1))
-    end_time = start_time + duration
-    if window_end and end_time > window_end:
-        end_time = window_end
-        start_time = end_time - duration
-    return start_time, end_time
+    return None, None
 
 # Initialize database tables on startup
 with app.app_context():
@@ -347,50 +378,49 @@ def api_events_create():
 
     db = SessionLocal()
     try:
-        # Add organizer's calendar
-        organizer = db.query(User).filter(User.id == user_data["user_id"]).first()
-        organizer_service = get_calendar_service_for_user(user_data["user_id"]) if organizer else None
-        if organizer:
-            organizer_events = _get_calendar_events_for_user(
-                organizer.id, time_min, time_max, DEFAULT_TIMEZONE
+        organizer_service = get_calendar_service(session.get("session_token"))
+        organizer_email = user_data.get("email")
+        organizer_name = user_data.get("name") or ""
+        organizer_events = _get_freebusy_for_email(
+            organizer_service, organizer_email, time_min, time_max, DEFAULT_TIMEZONE
+        )
+        print(f"[events] organizer {organizer_email}: FreeBusy returned {len(organizer_events)} busy blocks")
+        for ev in organizer_events:
+            print(
+                "  - Busy "
+                f"{_format_log_time(ev.get('start'))} → {_format_log_time(ev.get('end'))}"
             )
-            print(f"[events] organizer {organizer.email}: {len(organizer_events)} events")
-            for ev in organizer_events:
-                print(f"  - {ev.get('title','(no title)')} {ev.get('start')} → {ev.get('end')}")
-            participants_payload.append(
-                _build_participant_payload(organizer, DEFAULT_TIMEZONE, organizer_events)
-            )
+        participants_payload.append({
+            "id": f"user_{user_data['user_id']}",
+            "name": organizer_name,
+            "email": organizer_email,
+            "timezone": DEFAULT_TIMEZONE,
+            "events": organizer_events,
+        })
 
         # Add each attendee's calendar
         invited_users = []
         for email in attendee_emails:
+            freebusy_events = _get_freebusy_for_email(
+                organizer_service, email, time_min, time_max, DEFAULT_TIMEZONE
+            )
+            print(f"[events] attendee {email}: FreeBusy returned {len(freebusy_events)} busy blocks")
+            for ev in freebusy_events:
+                print(
+                    "  - Busy "
+                    f"{_format_log_time(ev.get('start'))} → {_format_log_time(ev.get('end'))}"
+                )
+            participants_payload.append({
+                "id": email,
+                "name": "",
+                "email": email,
+                "timezone": DEFAULT_TIMEZONE,
+                "events": freebusy_events,
+            })
+
             user = db.query(User).filter(User.email == email).first()
             if user:
                 invited_users.append(user)
-                user_events = _get_calendar_events_for_user(
-                    user.id, time_min, time_max, DEFAULT_TIMEZONE
-                )
-                print(f"[events] attendee {user.email} (user_id={user.id}): {len(user_events)} events")
-                for ev in user_events:
-                    print(f"  - {ev.get('title','(no title)')} {ev.get('start')} → {ev.get('end')}")
-                participants_payload.append(
-                    _build_participant_payload(user, DEFAULT_TIMEZONE, user_events)
-                )
-            else:
-                # Attendee not in our system — use FreeBusy via organizer's credentials
-                freebusy_events = _get_freebusy_for_email(
-                    organizer_service, email, time_min, time_max, DEFAULT_TIMEZONE
-                )
-                print(f"[events] attendee {email}: not in DB, FreeBusy returned {len(freebusy_events)} busy blocks")
-                for ev in freebusy_events:
-                    print(f"  - Busy {ev.get('start')} → {ev.get('end')}")
-                participants_payload.append({
-                    "id": email,
-                    "name": "",
-                    "email": email,
-                    "timezone": DEFAULT_TIMEZONE,
-                    "events": freebusy_events,
-                })
 
         # Run the scheduler to find the optimal meeting time
         start_time, end_time = _schedule_meeting(
@@ -400,6 +430,12 @@ def api_events_create():
             duration_minutes,
             location_type=location_type,
         )
+
+        if not start_time or not end_time:
+            return jsonify({
+                "error": "no_valid_slots",
+                "message": "No valid slots found for the requested window.",
+            }), 409
 
         # Create proposal
         proposal = MeetingProposal(
@@ -671,26 +707,27 @@ def api_create_meeting():
         db.add(proposal)
         db.flush()  # Get the proposal ID
 
-        organizer = db.query(User).filter(User.id == user_data["user_id"]).first()
         participants_payload = []
-        if organizer:
-            organizer_events = None
-            if participant_events is None:
-                organizer_events = _get_calendar_events_for_user(
-                    organizer.id,
-                    window_start.isoformat() if window_start else None,
-                    window_end.isoformat() if window_end else None,
-                    timezone_name,
-                )
-            else:
-                organizer_events = participant_events.get(organizer.email)
-            participants_payload.append(
-                _build_participant_payload(
-                    organizer,
-                    timezone_name,
-                    organizer_events,
-                )
+        organizer_service = get_calendar_service(session.get("session_token"))
+        organizer_email = user_data.get("email")
+        organizer_name = user_data.get("name") or ""
+        if participant_events is None:
+            organizer_events = _get_freebusy_for_email(
+                organizer_service,
+                organizer_email,
+                window_start.isoformat() if window_start else None,
+                window_end.isoformat() if window_end else None,
+                timezone_name,
             )
+        else:
+            organizer_events = participant_events.get(organizer_email) or []
+        participants_payload.append({
+            "id": f"user_{user_data['user_id']}",
+            "name": organizer_name,
+            "email": organizer_email,
+            "timezone": timezone_name,
+            "events": organizer_events,
+        })
 
         # Create invites for each invited user
         not_found = []
@@ -699,35 +736,34 @@ def api_create_meeting():
             user = db.query(User).filter(User.email == email).first()
             if not user:
                 not_found.append(email)
-                continue
-            invited_users.append(user)
-
-            invite = MeetingInvite(
-                proposal_id=proposal.id,
-                user_id=user.id,
-                is_required=True,
-                status="pending",
-            )
-            db.add(invite)
+            else:
+                invited_users.append(user)
+                invite = MeetingInvite(
+                    proposal_id=proposal.id,
+                    user_id=user.id,
+                    is_required=True,
+                    status="pending",
+                )
+                db.add(invite)
 
         for user in invited_users:
-            user_events = None
             if participant_events is None:
-                user_events = _get_calendar_events_for_user(
-                    user.id,
+                user_events = _get_freebusy_for_email(
+                    organizer_service,
+                    user.email,
                     window_start.isoformat() if window_start else None,
                     window_end.isoformat() if window_end else None,
                     timezone_name,
                 )
             else:
-                user_events = participant_events.get(user.email)
-            participants_payload.append(
-                _build_participant_payload(
-                    user,
-                    timezone_name,
-                    user_events,
-                )
-            )
+                user_events = participant_events.get(user.email) or []
+            participants_payload.append({
+                "id": user.email,
+                "name": user.name or "",
+                "email": user.email,
+                "timezone": timezone_name,
+                "events": user_events,
+            })
 
         print("Scheduler payload:")
         print(json.dumps(participants_payload, indent=2))
@@ -740,6 +776,15 @@ def api_create_meeting():
             duration_minutes,
             location_type=location_type,
         )
+
+        if not start_time or not end_time:
+            proposal.status = "pending"
+            db.commit()
+            return jsonify({
+                "error": "no_valid_slots",
+                "message": "No valid slots found for the requested window.",
+                "proposal": proposal.to_dict(),
+            }), 409
 
         confirmed_meeting = ConfirmedMeeting(
             proposal_id=proposal.id,
