@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api } from "../api";
+import AIScheduleBar from "./AIScheduleBar";
 
 export default function InviteTab() {
   const [query, setQuery] = useState("");
@@ -98,6 +99,12 @@ export default function InviteTab() {
 
   return (
     <div>
+      <AIScheduleBar />
+
+      <div className="ai-schedule-divider">
+        <span>or schedule manually</span>
+      </div>
+
       {/* Search */}
       <form onSubmit={handleSearch} className="search-form">
         <input

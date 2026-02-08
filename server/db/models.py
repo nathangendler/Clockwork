@@ -148,6 +148,7 @@ class ConfirmedMeeting(Base):
             "id": self.id,
             "proposal_id": self.proposal_id,
             "organizer_id": self.organizer_id,
+            "organizer_email": self.organizer.email if self.organizer else None,
             "title": self.title,
             "description": self.description,
             "duration_minutes": self.duration_minutes,

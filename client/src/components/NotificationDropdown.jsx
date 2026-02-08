@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { api } from '../api';
 
 export default function NotificationDropdown() {
   const [isOpen, setIsOpen] = useState(false);
@@ -32,8 +33,20 @@ export default function NotificationDropdown() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Prevent body scroll when dropdown is open
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isOpen]);
+
   function fetchUnreadCount() {
-    fetch('/api/notifications/unread-count', { credentials: 'include' })
+    api('/api/notifications/unread-count')
       .then(res => res.json())
       .then(data => setUnreadCount(data.count || 0))
       .catch(() => {});
@@ -41,7 +54,7 @@ export default function NotificationDropdown() {
 
   function fetchNotifications() {
     setLoading(true);
-    fetch('/api/notifications', { credentials: 'include' })
+    api('/api/notifications')
       .then(res => res.json())
       .then(data => {
         setNotifications(data);
@@ -73,18 +86,24 @@ export default function NotificationDropdown() {
   }
 
   function handleRespond(notificationId, response) {
-    fetch(`/api/notifications/${notificationId}/respond`, {
+    // Optimistic update - update UI immediately
+    setNotifications(prev =>
+      prev.map(n =>
+        n.id === notificationId ? { ...n, response, is_read: true } : n
+      )
+    );
+    setUnreadCount(prev => Math.max(0, prev - 1));
+
+    // Then sync with server in background
+    api(`/api/notifications/${notificationId}/respond`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
       body: JSON.stringify({ response }),
-    })
-      .then(res => res.json())
-      .then(() => {
-        fetchNotifications();
-        fetchUnreadCount();
-      })
-      .catch(() => {});
+    }).catch(() => {
+      // Revert on error
+      fetchNotifications();
+      fetchUnreadCount();
+    });
   }
 
   function formatTime(isoString) {
@@ -133,6 +152,11 @@ export default function NotificationDropdown() {
       {isOpen && (
         <div className="notification-dropdown">
           <div className="notification-header">
+            <button className="notification-close" onClick={() => setIsOpen(false)}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M19 12H5M12 19l-7-7 7-7" />
+              </svg>
+            </button>
             <h3>Notifications</h3>
             {hasRespondedNotifications && (
               <button className="notification-clear-btn" onClick={handleClearResponded}>

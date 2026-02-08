@@ -5,12 +5,17 @@ import { api } from "../api";
 export default function CalendarTab() {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [userEmail, setUserEmail] = useState(null);
 
   function fetchEvents() {
-    api("/api/events")
-      .then((res) => res.json())
-      .then((data) => {
-        setEvents(data);
+    // Fetch current user and events in parallel
+    Promise.all([
+      api("/api/me").then((res) => res.json()),
+      api("/api/events").then((res) => res.json()),
+    ])
+      .then(([userData, eventsData]) => {
+        setUserEmail(userData.email);
+        setEvents(eventsData);
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -25,7 +30,7 @@ export default function CalendarTab() {
   if (loading) return <div className="no-events">Loading events...</div>;
   if (events.length === 0)
     return (
-      <div className="no-events">No meetings pending acceptance.</div>
+      <div className="no-events">No pending events on your calendar.</div>
     );
 
   const TZ = "America/New_York";
@@ -43,13 +48,21 @@ export default function CalendarTab() {
   }
 
   function handleDelete(eventId) {
+    // Optimistic update - remove from UI immediately
+    const previousEvents = events;
+    setEvents(events.filter((e) => e.id !== eventId));
+
     api(`/api/events/${eventId}`, { method: 'DELETE' })
-      .then(res => {
-        if (res.ok) {
-          setEvents(prev => prev.filter(e => e.id !== eventId));
+      .then((res) => {
+        if (!res.ok) {
+          // Revert on error
+          setEvents(previousEvents);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        // Revert on error
+        setEvents(previousEvents);
+      });
   }
 
   let currentDate = "";
@@ -91,13 +104,15 @@ export default function CalendarTab() {
                   </div>
                 )}
               </div>
-              <button
-                className="btn-delete"
-                onClick={() => handleDelete(event.id)}
-                title="Delete meeting"
-              >
-                X
-              </button>
+              {event.organizer_email === userEmail && (
+                <button
+                  className="btn-delete"
+                  onClick={() => handleDelete(event.id)}
+                  title="Delete meeting"
+                >
+                  X
+                </button>
+              )}
             </div>
           </div>
         );
