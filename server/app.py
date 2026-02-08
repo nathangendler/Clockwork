@@ -491,7 +491,7 @@ def api_events_create():
 
         # Create notifications for all invitees (NOT the organizer)
         for user in invited_users:
-            organizer_display = organizer.name or organizer.email if organizer else "Someone"
+            organizer_display = organizer_name or organizer_email or "Someone"
             meeting_time = confirmed.start_time.strftime('%B %d, %Y at %I:%M %p')
             notification = Notification(
                 user_id=user.id,
@@ -817,7 +817,7 @@ def api_create_meeting():
 
         # Create notifications for all invitees (NOT the organizer)
         for user in invited_users:
-            organizer_display = organizer.name or organizer.email if organizer else "Someone"
+            organizer_display = organizer_name or organizer_email or "Someone"
             meeting_time = confirmed_meeting.start_time.strftime('%B %d, %Y at %I:%M %p')
             notification = Notification(
                 user_id=user.id,

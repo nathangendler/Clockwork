@@ -1,28 +1,18 @@
 import { useState, useEffect } from "react";
 
-export default function CalendarTab({ token }) {
+export default function CalendarTab() {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!token) return;
-
-    const fetchOptions = token === "session"
-      ? { credentials: "include" }
-      : { headers: { Authorization: `Bearer ${token}` } };
-
-    fetch("http://localhost:8080/api/events", fetchOptions)
+    fetch("/api/events", { credentials: "include" })
       .then((res) => res.json())
       .then((data) => {
-        if (Array.isArray(data)) {
-          setEvents(data);
-        } else {
-          setEvents([]);
-        }
+        setEvents(data);
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [token]);
+  }, []);
 
   if (loading) return <div className="no-events">Loading events...</div>;
   if (events.length === 0)
