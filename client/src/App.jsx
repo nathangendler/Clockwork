@@ -3,6 +3,7 @@ import Header from "./components/Header";
 import Tabs from "./components/Tabs";
 import CalendarTab from "./components/CalendarTab";
 import InviteTab from "./components/InviteTab";
+import CalendarEvents from "./components/CalendarEvents";
 import "./App.css";
 
 function App() {
@@ -51,11 +52,10 @@ function App() {
       <div className="app-body">
         <Tabs activeTab={activeTab} onTabChange={setActiveTab} />
         <main className="content">
-          {activeTab === "calendar" ? (
-            <CalendarTab onInviteClick={() => setActiveTab("settings")} />
-          ) : (
-            <InviteTab />
-          )}
+          <CalendarTab
+            onInviteClick={() => setActiveTab("settings")}
+            activeTab={activeTab}
+          />
         </main>
       </div>
     </div>
