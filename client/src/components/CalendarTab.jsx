@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
+import InviteTab from "./InviteTab";
 
 export default function CalendarTab({ onInviteClick }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [scheduleQuery, setScheduleQuery] = useState("");
+  const [scheduleMode, setScheduleMode] = useState(null);
 
   function fetchEvents() {
     fetch("/api/events", { credentials: "include" })
@@ -60,52 +62,48 @@ export default function CalendarTab({ onInviteClick }) {
           Easily find the best meeting times for your team.
         </p>
         <div className="calendar-hero-actions">
-          <button type="button" className="btn-primary">
-            <span className="btn-primary-icon">+</span>
-            Create Meeting
-          </button>
-          <button type="button" className="btn-secondary">
-            <span className="btn-secondary-icon" aria-hidden>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <rect width="24" height="24" rx="4" fill="#4285F4" />
-                <path d="M6 8h12v2H6V8zm0 4h12v2H6v-2zm0 4h8v2H6v-2z" fill="white" />
-              </svg>
-            </span>
-            Import Google Calendar
-          </button>
           <button
             type="button"
-            className="btn-secondary"
-            onClick={onInviteClick}
+            className={
+              scheduleMode === "manual" ? "btn-primary" : "btn-secondary"
+            }
+            onClick={() =>
+              setScheduleMode(scheduleMode === "manual" ? null : "manual")
+            }
           >
-            <span className="btn-secondary-icon" aria-hidden>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5f6368" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                <circle cx="9" cy="7" r="4" />
-                <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
-              </svg>
-            </span>
-            Invite Teammates
+            <span className="btn-primary-icon">+</span>
+            Schedule Manually
+          </button>
+
+          <button
+            type="button"
+            className={scheduleMode === "ai" ? "btn-primary" : "btn-secondary"}
+            onClick={() => setScheduleMode(scheduleMode === "ai" ? null : "ai")}
+          >
+            <span className="btn-primary-icon">+</span>
+            Schedule with AI
           </button>
         </div>
-        <div className="scheduling-input-wrap">
-          <input
-            type="text"
-            className="scheduling-input"
-            placeholder="What would you like to schedule?"
-            value={scheduleQuery}
-            onChange={(e) => setScheduleQuery(e.target.value)}
-            aria-label="What would you like to schedule?"
-          />
-          <button type="button" className="scheduling-submit" aria-label="Submit">
-            <span aria-hidden>→</span>
-          </button>
-        </div>
-        <div className="calendar-hero-secondary">
-          <button type="button" className="btn-outline">Scheduling Tips</button>
-          <button type="button" className="btn-outline">Analytics Overview</button>
-          <button type="button" className="btn-outline">Manage Settings</button>
-        </div>
+        {scheduleMode === "manual" && <InviteTab></InviteTab>}
+        {scheduleMode === "ai" && (
+          <div className="scheduling-input-wrap">
+            <input
+              type="text"
+              className="scheduling-input"
+              placeholder="What would you like to schedule?"
+              value={scheduleQuery}
+              onChange={(e) => setScheduleQuery(e.target.value)}
+              aria-label="What would you like to schedule?"
+            />
+            <button
+              type="button"
+              className="scheduling-submit"
+              aria-label="Submit"
+            >
+              <span aria-hidden>→</span>
+            </button>
+          </div>
+        )}
       </section>
 
       {loading ? (
@@ -138,7 +136,9 @@ export default function CalendarTab({ onInviteClick }) {
                       {event.duration_minutes} min · {event.urgency}
                     </div>
                     {event.description && (
-                      <div className="event-description">{event.description}</div>
+                      <div className="event-description">
+                        {event.description}
+                      </div>
                     )}
                     {event.location && (
                       <div className="event-location">{event.location}</div>
